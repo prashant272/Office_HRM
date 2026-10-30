@@ -92,7 +92,8 @@ const FieldMeetingsReview = () => {
 
     // CSV Export
     const handleExportCSV = () => {
-        window.open("http://localhost:5000/api/field-meetings/export/csv", "_blank");
+        const baseUrl = API.defaults.baseURL || "http://localhost:5000/api";
+        window.open(`${baseUrl}/field-meetings/export/csv`, "_blank");
     };
 
     const filteredMeetings = meetings.filter((m) => {
