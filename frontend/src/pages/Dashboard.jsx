@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import API from "../api/axios";
 import { useNavigate } from "react-router-dom";
 import {
@@ -71,10 +71,12 @@ const Dashboard = () => {
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [fetchError, setFetchError] = useState(null);
     const [clockLoading, setClockLoading] = useState(false);
     const [selectedAlert, setSelectedAlert] = useState(null);
     const [adminNotes, setAdminNotes] = useState("");
     const [ackLoading, setAckLoading] = useState(false);
+    const debounceTimerRef = useRef(null);
 
     const userInfo = JSON.parse(localStorage.getItem("userInfo"));
     const isAdmin = userInfo?.role === "admin" || userInfo?.role === "manager";
@@ -86,8 +88,10 @@ const Dashboard = () => {
         try {
             const { data } = await API.get("/dashboard/stats");
             setStats(data);
+            setFetchError(null);
         } catch (err) {
             console.error("Dashboard stats error:", err);
+            setFetchError(err.response?.data?.message || err.message || "Failed to load dashboard data");
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -98,25 +102,31 @@ const Dashboard = () => {
         fetchStats();
     }, [fetchStats]);
 
-    // Socket real-time listeners for live updates
+    // Socket real-time listeners for live updates (debounced to avoid server load)
     useEffect(() => {
         if (!socket) return;
 
         const handleRealtimeUpdate = () => {
-            fetchStats();
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+            debounceTimerRef.current = setTimeout(() => {
+                fetchStats();
+            }, 1500);
         };
 
         socket.on("inactivity-alert", handleRealtimeUpdate);
         socket.on("inactivity-resolved", handleRealtimeUpdate);
-        socket.on("session-status-update", handleRealtimeUpdate);
         socket.on("session-login", handleRealtimeUpdate);
         socket.on("session-logout", handleRealtimeUpdate);
         socket.on("meeting-submitted", handleRealtimeUpdate);
 
         return () => {
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
             socket.off("inactivity-alert", handleRealtimeUpdate);
             socket.off("inactivity-resolved", handleRealtimeUpdate);
-            socket.off("session-status-update", handleRealtimeUpdate);
             socket.off("session-login", handleRealtimeUpdate);
             socket.off("session-logout", handleRealtimeUpdate);
             socket.off("meeting-submitted", handleRealtimeUpdate);
@@ -172,6 +182,29 @@ const Dashboard = () => {
             <div className="h-[70vh] flex flex-col items-center justify-center space-y-4">
                 <Loader2 className="animate-spin text-primary w-12 h-12" />
                 <p className="text-sm font-bold text-slate-500">Loading HRM Dashboard...</p>
+            </div>
+        );
+    }
+
+    if (!stats) {
+        return (
+            <div className="h-[60vh] flex flex-col items-center justify-center space-y-4 text-center px-4">
+                <div className="w-14 h-14 rounded-2xl bg-rose-50 text-rose-500 flex items-center justify-center">
+                    <AlertTriangle size={32} />
+                </div>
+                <h3 className="text-lg font-black text-slate-800">Unable to Load Dashboard Data</h3>
+                <p className="text-xs text-slate-500 max-w-sm">
+                    {fetchError || "The HRM server did not respond in time. Please check your connection or retry."}
+                </p>
+                <button
+                    onClick={() => {
+                        setLoading(true);
+                        fetchStats();
+                    }}
+                    className="px-6 py-2.5 bg-primary text-white text-xs font-black rounded-xl hover:bg-blue-600 transition-all shadow-md active:scale-95"
+                >
+                    Retry Loading
+                </button>
             </div>
         );
     }

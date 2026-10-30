@@ -6,10 +6,12 @@ const attendanceSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true,
+            index: true,
         },
         date: {
             type: String, // Format: YYYY-MM-DD for easy querying
             required: true,
+            index: true,
         },
         checkIn: {
             type: Date,
@@ -21,6 +23,7 @@ const attendanceSchema = new mongoose.Schema(
             type: String,
             enum: ["Present", "Absent", "Late", "Half-Day"],
             default: "Present",
+            index: true,
         },
         checkInLocation: {
             lat: Number,
@@ -58,6 +61,7 @@ const attendanceSchema = new mongoose.Schema(
                 type: String,
                 enum: ["None", "Pending", "Approved", "Rejected"],
                 default: "None",
+                index: true,
             },
             reviewedBy: {
                 type: mongoose.Schema.Types.ObjectId,
@@ -69,5 +73,9 @@ const attendanceSchema = new mongoose.Schema(
     },
     { timestamps: true }
 );
+
+// Compound indexes for fast lookups
+attendanceSchema.index({ user: 1, date: 1 });
+attendanceSchema.index({ date: 1, status: 1 });
 
 module.exports = mongoose.model("Attendance", attendanceSchema);

@@ -8,24 +8,85 @@ const Leave = require("../models/Leave");
 const Department = require("../models/Department");
 const moment = require("moment");
 
-// @desc    Get dashboard statistics
+// @desc    Get dashboard statistics (High performance parallel batch queries)
 // @route   GET /api/dashboard/stats
 // @access  Private
 const getStats = async (req, res) => {
     try {
         const today = moment().format("YYYY-MM-DD");
 
+        // Precompute last 7 dates array for batch querying
+        const last7Dates = [];
+        const dayNames = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = moment().subtract(i, "days");
+            last7Dates.push(d.format("YYYY-MM-DD"));
+            dayNames.push(d.format("ddd"));
+        }
+
         // ==========================================
         // 1. ADMIN PANEL DASHBOARD METRICS
         // ==========================================
         if (req.user.role === "admin" || req.user.role === "manager") {
-            const totalEmployees = await User.countDocuments({ role: "employee", status: "active" });
-
-            // Find all active sessions
-            const activeSessions = await LoginSession.find({
-                isActive: true,
-                logoutTime: null,
-            }).populate("user", "name email department designation role");
+            // Execute all queries in parallel via Promise.all
+            const [
+                totalEmployees,
+                activeSessions,
+                todayAttendanceCount,
+                presentCount,
+                lateCount,
+                halfDayCount,
+                todayMeetingsTotal,
+                todayMeetingsCompleted,
+                pendingMeetingApprovals,
+                pendingCorrections,
+                activeAlerts,
+                recentSessions,
+                last7Attendance,
+                last7Meetings,
+                approvedMeetingsCount,
+                rejectedMeetingsCount,
+                draftMeetingsCount,
+                totalMeetingsCount
+            ] = await Promise.all([
+                User.countDocuments({ role: "employee", status: "active" }),
+                LoginSession.find({
+                    isActive: true,
+                    logoutTime: null,
+                }).populate("user", "name email department designation role").lean(),
+                Attendance.countDocuments({ date: today }),
+                Attendance.countDocuments({ date: today, status: "Present" }),
+                Attendance.countDocuments({ date: today, status: "Late" }),
+                Attendance.countDocuments({ date: today, status: "Half-Day" }),
+                FieldMeeting.countDocuments({ scheduledDate: today }),
+                FieldMeeting.countDocuments({ scheduledDate: today, status: "Completed" }),
+                FieldMeeting.countDocuments({ approvalStatus: "Pending_Approval" }),
+                Attendance.countDocuments({ "correctionRequest.status": "Pending" }),
+                ActivityAlert.find({ status: "active" })
+                    .populate({
+                        path: "user",
+                        select: "name email employeeId department designation",
+                        populate: { path: "department", select: "name" },
+                    })
+                    .sort({ alertTime: -1 })
+                    .limit(10)
+                    .lean(),
+                LoginSession.find()
+                    .populate({
+                        path: "user",
+                        select: "name email employeeId department designation",
+                        populate: { path: "department", select: "name" },
+                    })
+                    .sort({ updatedAt: -1, loginTime: -1 })
+                    .limit(8)
+                    .lean(),
+                Attendance.find({ date: { $in: last7Dates } }).select("date").lean(),
+                FieldMeeting.find({ scheduledDate: { $in: last7Dates } }).select("scheduledDate status").lean(),
+                FieldMeeting.countDocuments({ approvalStatus: "Approved" }),
+                FieldMeeting.countDocuments({ approvalStatus: "Rejected" }),
+                FieldMeeting.countDocuments({ approvalStatus: "Draft" }),
+                FieldMeeting.countDocuments(),
+            ]);
 
             // Filter unique active user IDs
             const loggedInUserIds = new Set(activeSessions.map((s) => s.user?._id?.toString()).filter(Boolean));
@@ -36,68 +97,30 @@ const getStats = async (req, res) => {
             const missingHeartbeatCount = activeSessions.filter((s) => s.sessionStatus === "heartbeat_missing").length;
             const loggedOutEmployees = Math.max(0, totalEmployees - loggedInEmployees);
 
-            // Today's Attendance
-            const todayAttendanceCount = await Attendance.countDocuments({ date: today });
-            const presentCount = await Attendance.countDocuments({ date: today, status: "Present" });
-            const lateCount = await Attendance.countDocuments({ date: today, status: "Late" });
-            const halfDayCount = await Attendance.countDocuments({ date: today, status: "Half-Day" });
-
-            // Today's Field Meetings
-            const todayMeetingsTotal = await FieldMeeting.countDocuments({ scheduledDate: today });
-            const todayMeetingsCompleted = await FieldMeeting.countDocuments({
-                scheduledDate: today,
-                status: "Completed",
-            });
-            const pendingMeetingApprovals = await FieldMeeting.countDocuments({
-                approvalStatus: "Pending_Approval",
-            });
-
-            // Pending attendance correction requests
-            const pendingCorrections = await Attendance.countDocuments({
-                "correctionRequest.status": "Pending",
-            });
-
-            // Real-time Inactivity Alerts
-            const activeAlerts = await ActivityAlert.find({ status: "active" })
-                .populate({
-                    path: "user",
-                    select: "name email employeeId department designation",
-                    populate: { path: "department", select: "name" },
-                })
-                .sort({ alertTime: -1 })
-                .limit(10);
-
-            // Recent Sessions Activity
-            const recentSessions = await LoginSession.find()
-                .populate({
-                    path: "user",
-                    select: "name email employeeId department designation",
-                    populate: { path: "department", select: "name" },
-                })
-                .sort({ updatedAt: -1, loginTime: -1 })
-                .limit(8);
-
-            // 7-day Attendance and Field Meetings Trend
-            const last7Days = [];
-            for (let i = 6; i >= 0; i--) {
-                const date = moment().subtract(i, "days").format("YYYY-MM-DD");
-                const dayName = moment().subtract(i, "days").format("ddd");
-
-                const dayAtt = await Attendance.countDocuments({ date });
-                const dayMeetings = await FieldMeeting.countDocuments({ scheduledDate: date });
-                const dayCompletedMeetings = await FieldMeeting.countDocuments({
-                    scheduledDate: date,
-                    status: "Completed",
-                });
-
-                last7Days.push({
-                    day: dayName,
-                    date,
-                    attendance: dayAtt,
-                    meetings: dayMeetings,
-                    completedMeetings: dayCompletedMeetings,
-                });
+            // In-memory fast aggregation for last 7 days trend
+            const attCountByDate = {};
+            for (let i = 0; i < last7Attendance.length; i++) {
+                const d = last7Attendance[i].date;
+                attCountByDate[d] = (attCountByDate[d] || 0) + 1;
             }
+
+            const meetingsByDate = {};
+            const completedMeetingsByDate = {};
+            for (let i = 0; i < last7Meetings.length; i++) {
+                const m = last7Meetings[i];
+                meetingsByDate[m.scheduledDate] = (meetingsByDate[m.scheduledDate] || 0) + 1;
+                if (m.status === "Completed") {
+                    completedMeetingsByDate[m.scheduledDate] = (completedMeetingsByDate[m.scheduledDate] || 0) + 1;
+                }
+            }
+
+            const last7Days = last7Dates.map((date, idx) => ({
+                day: dayNames[idx],
+                date,
+                attendance: attCountByDate[date] || 0,
+                meetings: meetingsByDate[date] || 0,
+                completedMeetings: completedMeetingsByDate[date] || 0,
+            }));
 
             // Session Status Distribution (Pie Chart)
             const sessionDistribution = [
@@ -107,17 +130,12 @@ const getStats = async (req, res) => {
                 { name: "Logged Out", value: loggedOutEmployees, color: "#94a3b8" },
             ];
 
-            // Field Meetings by Approval Status
-            const approvedMeetingsCount = await FieldMeeting.countDocuments({ approvalStatus: "Approved" });
-            const rejectedMeetingsCount = await FieldMeeting.countDocuments({ approvalStatus: "Rejected" });
-            const draftMeetingsCount = await FieldMeeting.countDocuments({ approvalStatus: "Draft" });
-
             const meetingStats = {
                 pending: pendingMeetingApprovals,
                 approved: approvedMeetingsCount,
                 rejected: rejectedMeetingsCount,
                 draft: draftMeetingsCount,
-                total: await FieldMeeting.countDocuments(),
+                total: totalMeetingsCount,
             };
 
             return res.json({
@@ -152,66 +170,76 @@ const getStats = async (req, res) => {
         // ==========================================
         // 2. EMPLOYEE PANEL DASHBOARD METRICS
         // ==========================================
-        const myTodayAttendance = await Attendance.findOne({
-            user: req.user._id,
-            date: today,
-        });
-
-        // Find employee's current active session
         const sessionId = req.headers["x-session-id"] || req.query.sessionId;
-        let myCurrentSession = null;
-        if (sessionId) {
-            myCurrentSession = await LoginSession.findOne({
-                sessionId,
+
+        // Run all employee queries concurrently
+        const [
+            myTodayAttendance,
+            myCurrentSession,
+            myTodayMeetings,
+            myPendingMeetings,
+            myApprovedMeetings,
+            myRejectedMeetings,
+            myRecentMeetings,
+            myLast7Attendance
+        ] = await Promise.all([
+            Attendance.findOne({
                 user: req.user._id,
-                isActive: true,
-            });
-        }
-        if (!myCurrentSession) {
-            myCurrentSession = await LoginSession.findOne({
+                date: today,
+            }).lean(),
+            sessionId
+                ? LoginSession.findOne({
+                      sessionId,
+                      user: req.user._id,
+                      isActive: true,
+                  }).lean()
+                : LoginSession.findOne({
+                      user: req.user._id,
+                      isActive: true,
+                  }).sort({ loginTime: -1 }).lean(),
+            FieldMeeting.countDocuments({
+                employee: req.user._id,
+                scheduledDate: today,
+            }),
+            FieldMeeting.countDocuments({
+                employee: req.user._id,
+                approvalStatus: "Pending_Approval",
+            }),
+            FieldMeeting.countDocuments({
+                employee: req.user._id,
+                approvalStatus: "Approved",
+            }),
+            FieldMeeting.countDocuments({
+                employee: req.user._id,
+                approvalStatus: "Rejected",
+            }),
+            FieldMeeting.find({ employee: req.user._id })
+                .populate("verification", "-otpHash")
+                .populate("evidence")
+                .sort({ scheduledDate: -1, createdAt: -1 })
+                .limit(5)
+                .lean(),
+            Attendance.find({
                 user: req.user._id,
-                isActive: true,
-            }).sort({ loginTime: -1 });
+                date: { $in: last7Dates },
+            }).select("date workDuration").lean(),
+        ]);
+
+        // Personal 7-day Attendance Trend in memory
+        const attMap = {};
+        for (let i = 0; i < myLast7Attendance.length; i++) {
+            attMap[myLast7Attendance[i].date] = myLast7Attendance[i];
         }
 
-        // Employee's Field Meetings
-        const myTodayMeetings = await FieldMeeting.countDocuments({
-            employee: req.user._id,
-            scheduledDate: today,
-        });
-        const myPendingMeetings = await FieldMeeting.countDocuments({
-            employee: req.user._id,
-            approvalStatus: "Pending_Approval",
-        });
-        const myApprovedMeetings = await FieldMeeting.countDocuments({
-            employee: req.user._id,
-            approvalStatus: "Approved",
-        });
-        const myRejectedMeetings = await FieldMeeting.countDocuments({
-            employee: req.user._id,
-            approvalStatus: "Rejected",
-        });
-
-        const myRecentMeetings = await FieldMeeting.find({ employee: req.user._id })
-            .populate("verification", "-otpHash")
-            .populate("evidence")
-            .sort({ scheduledDate: -1, createdAt: -1 })
-            .limit(5);
-
-        // Personal 7-day Attendance Trend
-        const myLast7Days = [];
-        for (let i = 6; i >= 0; i--) {
-            const date = moment().subtract(i, "days").format("YYYY-MM-DD");
-            const dayName = moment().subtract(i, "days").format("ddd");
-            const att = await Attendance.findOne({ user: req.user._id, date });
-
-            myLast7Days.push({
-                day: dayName,
+        const myLast7Days = last7Dates.map((date, idx) => {
+            const att = attMap[date];
+            return {
+                day: dayNames[idx],
                 date,
                 attended: att ? 1 : 0,
                 durationHours: att?.workDuration ? (att.workDuration / 60).toFixed(1) : 0,
-            });
-        }
+            };
+        });
 
         return res.json({
             isAdmin: false,
@@ -237,6 +265,7 @@ const getStats = async (req, res) => {
             chartData: myLast7Days,
         });
     } catch (error) {
+        console.error("Dashboard stats error:", error);
         res.status(500).json({ message: error.message });
     }
 };
