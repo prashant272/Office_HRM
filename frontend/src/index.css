@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #1e40af; /* Deep Royal Blue */
+  --color-secondary: #0f172a; /* Slate 900 */
+  --color-accent: #3b82f6; /* Azure Blue */
+  --color-bg: #f8fafc;
+  --color-card: #ffffff;
+  --color-text-main: #1e293b;
+  --color-text-muted: #64748b;
+  
+  /* Additional Premium Tokens */
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+  --radius-3xl: 2.5rem;
+  
+  --shadow-premium: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
+  --shadow-royal: 0 20px 25px -5px rgba(30, 64, 175, 0.1), 0 10px 10px -5px rgba(30, 64, 175, 0.04);
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-text-main font-sans antialiased selection:bg-primary/10 selection:text-primary;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-xl border border-white/20 rounded-3xl shadow-premium transition-all duration-500;
+  }
+  
+  .royal-button {
+    @apply bg-primary text-white px-8 py-4 rounded-2xl font-black shadow-royal hover:bg-blue-700 hover:-translate-y-1 active:scale-95 transition-all uppercase tracking-widest text-xs;
+  }
+}

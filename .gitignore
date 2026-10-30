@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+mobile_app/.env
+
+# Production Build Directories
+dist/
+build/
+**/dist/
+**/build/
+
+# Uploaded Files & Temporary Evidence
+backend/uploads/
+uploads/
+*.tmp
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# System & Editor Settings
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
