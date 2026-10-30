@@ -11,7 +11,9 @@ export const SocketProvider = ({ children, user }) => {
 
     useEffect(() => {
         if (user) {
-            const socketUrl = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+            // Derive root server URL from VITE_API_URL (e.g., http://localhost:5000/api -> http://localhost:5000)
+            const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+            const socketUrl = apiUrl.replace(/\/api\/?$/, "").replace(/\/$/, "") || "http://localhost:5000";
             const newSocket = io(socketUrl);
             setSocket(newSocket);
 
