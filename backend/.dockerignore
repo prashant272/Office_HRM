@@ -1,0 +1,22 @@
+# Dependencies (will be freshly installed inside container)
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment secrets (provided via docker run -e or docker-compose)
+.env
+.env.*
+!.env.example
+
+# Local uploads & temporary media
+uploads/
+*.tmp
+
+# Version Control & IDE settings
+.git
+.gitignore
+.vscode
+.idea
+*.md
+
