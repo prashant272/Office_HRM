@@ -62,17 +62,6 @@ The application will be accessible at `http://localhost:5173`.
 
 ---
 
-## 🔐 Default Seed Credentials
-
-- **Admin Account:**
-  - Email: `admin@office.com`
-  - Password: `adminpassword123`
-  - Role: `admin`
-
-- **Employee Account:**
-  - Email: `rahul.verma@office.com`
-  - Password: `employee123`
-  - Role: `employee`
 
 ---
 
