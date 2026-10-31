@@ -37,9 +37,29 @@ const loginSessionSchema = new mongoose.Schema(
         },
         sessionStatus: {
             type: String,
-            enum: ["active", "heartbeat_missing", "inactive", "logged_out"],
+            enum: ["active", "heartbeat_missing", "inactive", "on_break", "logged_out"],
             default: "active",
             index: true,
+        },
+        currentBreak: {
+            isOnBreak: { type: Boolean, default: false },
+            breakType: { type: String, enum: ["lunch", "tea", "short", null], default: null },
+            startTime: { type: Date },
+        },
+        breaks: [
+            {
+                breakType: { type: String, enum: ["lunch", "tea", "short"], default: "lunch" },
+                startTime: { type: Date, required: true },
+                endTime: { type: Date },
+                durationMinutes: { type: Number, default: 0 },
+            }
+        ],
+        totalBreakMinutes: {
+            type: Number,
+            default: 0,
+        },
+        lastInactiveFrom: {
+            type: Date,
         },
         isActive: {
             type: Boolean,

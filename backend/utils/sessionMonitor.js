@@ -37,6 +37,12 @@ const runInactivityCheck = async () => {
         }).populate("user", "name email role department designation");
 
         for (const session of activeSessions) {
+            // IF EMPLOYEE IS CURRENTLY ON AN AUTHORIZED BREAK (Lunch / Tea / Short)
+            if (session.currentBreak?.isOnBreak || session.sessionStatus === "on_break") {
+                // Do not mark as inactive and do not create inactivity alerts during break
+                continue;
+            }
+
             const lastHbTime = session.lastHeartbeat ? session.lastHeartbeat.getTime() : session.loginTime.getTime();
             const diffMinutes = (now - lastHbTime) / 60000;
 
@@ -44,6 +50,9 @@ const runInactivityCheck = async () => {
                 // Inactive session: No heartbeat for >= threshold (default 10 mins)
                 const previousStatus = session.sessionStatus;
                 session.sessionStatus = "inactive";
+                if (!session.lastInactiveFrom) {
+                    session.lastInactiveFrom = session.lastHeartbeat || session.loginTime;
+                }
                 await session.save();
 
                 // Prevent duplicate alerts for the same continuous inactivity period
@@ -52,6 +61,8 @@ const runInactivityCheck = async () => {
                     status: "active",
                 });
 
+                const inactiveFromTime = session.lastInactiveFrom || session.lastHeartbeat || session.loginTime;
+
                 if (!existingAlert) {
                     const newAlert = await ActivityAlert.create({
                         user: session.user._id,
@@ -59,6 +70,8 @@ const runInactivityCheck = async () => {
                         sessionId: session.sessionId,
                         alertType: "inactivity_timeout",
                         inactivityDurationMinutes: Math.round(diffMinutes),
+                        inactiveFrom: inactiveFromTime,
+                        inactiveTo: new Date(),
                         lastHeartbeat: session.lastHeartbeat,
                         lastInteraction: session.lastInteraction,
                         alertTime: new Date(),
@@ -72,8 +85,9 @@ const runInactivityCheck = async () => {
                     io.emit("inactivity-alert", populatedAlert);
                     console.log(`⚠️ Inactivity Alert created for ${session.user.name} (${Math.round(diffMinutes)} mins idle)`);
                 } else {
-                    // Update continuous inactivity duration
+                    // Update continuous inactivity duration & latest to timestamp
                     existingAlert.inactivityDurationMinutes = Math.round(diffMinutes);
+                    existingAlert.inactiveTo = new Date();
                     await existingAlert.save();
                 }
 
@@ -83,6 +97,7 @@ const runInactivityCheck = async () => {
                         userId: session.user._id,
                         sessionStatus: "inactive",
                         lastHeartbeat: session.lastHeartbeat,
+                        inactiveFrom: inactiveFromTime,
                         durationMinutes: Math.round(diffMinutes),
                     });
                 }
@@ -90,6 +105,7 @@ const runInactivityCheck = async () => {
                 // Heartbeat missing (tab closed, laptop sleeping, or background throttled: 1.5m to 10m)
                 if (session.sessionStatus !== "heartbeat_missing") {
                     session.sessionStatus = "heartbeat_missing";
+                    session.lastInactiveFrom = session.lastHeartbeat || new Date();
                     await session.save();
 
                     io.emit("session-status-update", {
@@ -97,12 +113,14 @@ const runInactivityCheck = async () => {
                         userId: session.user._id,
                         sessionStatus: "heartbeat_missing",
                         lastHeartbeat: session.lastHeartbeat,
+                        inactiveFrom: session.lastInactiveFrom,
                     });
                 }
             } else {
                 // Active session with fresh heartbeat (<1.5 min)
                 if (session.sessionStatus !== "active") {
                     session.sessionStatus = "active";
+                    session.lastInactiveFrom = null;
                     await session.save();
 
                     io.emit("session-status-update", {
@@ -136,8 +154,16 @@ const recordHeartbeat = async (sessionId, interactionData = {}) => {
         session.interactionCount = (session.interactionCount || 0) + 1;
     }
 
+    // If employee is on break, retain on_break status
+    if (session.currentBreak?.isOnBreak) {
+        session.sessionStatus = "on_break";
+        await session.save();
+        return session;
+    }
+
     const wasInactiveOrMissing = session.sessionStatus === "inactive" || session.sessionStatus === "heartbeat_missing";
     session.sessionStatus = "active";
+    session.lastInactiveFrom = null;
     await session.save();
 
     // If there was an active alert for this continuous session, automatically resolve it
@@ -150,6 +176,7 @@ const recordHeartbeat = async (sessionId, interactionData = {}) => {
         if (activeAlert) {
             activeAlert.status = "resolved";
             activeAlert.resolvedAt = now;
+            activeAlert.inactiveTo = now;
             activeAlert.resolutionReason = "Heartbeat resumed by employee";
             await activeAlert.save();
 

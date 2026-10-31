@@ -375,10 +375,12 @@ const Dashboard = () => {
                                                 </span>
                                                 <span className="text-xs text-slate-500 font-medium">({alert.user?.department?.name || "General"})</span>
                                             </div>
-                                            <div className="flex flex-wrap items-center gap-x-4 text-xs text-slate-600 font-medium">
-                                                <span>Duration: <strong className="text-rose-600">{alert.inactivityDurationMinutes} mins</strong></span>
+                                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 font-medium">
+                                                <span>Inactivity Duration: <strong className="text-rose-600">{alert.inactivityDurationMinutes} mins</strong></span>
+                                                <span className="bg-rose-100/70 text-rose-800 px-2 py-0.5 rounded-md font-bold">
+                                                    Inactive Interval: {formatIST(alert.inactiveFrom || alert.lastHeartbeat)} → {alert.inactiveTo ? formatIST(alert.inactiveTo) : "Still Inactive"}
+                                                </span>
                                                 <span>Last Heartbeat: <strong>{formatIST(alert.lastHeartbeat)} IST</strong></span>
-                                                <span>Last Interaction: <strong>{formatIST(alert.lastInteraction)} IST</strong></span>
                                             </div>
                                         </div>
 
@@ -435,6 +437,7 @@ const Dashboard = () => {
                                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                                     {stats.recentSessions?.map((sess) => {
                                         const isAct = sess.sessionStatus === "active";
+                                        const isOnBreak = sess.sessionStatus === "on_break";
                                         const isMissing = sess.sessionStatus === "heartbeat_missing";
                                         const isInactive = sess.sessionStatus === "inactive";
                                         const isLoggedOut = sess.sessionStatus === "logged_out";
@@ -456,13 +459,24 @@ const Dashboard = () => {
                                                     {formatIST(sess.lastHeartbeat)}
                                                 </td>
                                                 <td className="py-3 px-4">
-                                                    {sess.durationMinutes || 0} mins
+                                                    <div>{sess.durationMinutes || 0} mins</div>
+                                                    {sess.totalBreakMinutes > 0 && (
+                                                        <span className="text-[10px] text-purple-600 font-bold block">
+                                                            Break: {sess.totalBreakMinutes}m
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="py-3 px-4 text-right">
                                                     {isAct && (
                                                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800">
                                                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                                                             Active Now
+                                                        </span>
+                                                    )}
+                                                    {isOnBreak && (
+                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-purple-100 text-purple-800">
+                                                            <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
+                                                            On Break ({sess.currentBreak?.breakType || "Break"})
                                                         </span>
                                                     )}
                                                     {isMissing && (

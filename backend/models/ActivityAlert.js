@@ -29,6 +29,12 @@ const activityAlertSchema = new mongoose.Schema(
             required: true,
             default: 10,
         },
+        inactiveFrom: {
+            type: Date,
+        },
+        inactiveTo: {
+            type: Date,
+        },
         lastHeartbeat: {
             type: Date,
             required: true,

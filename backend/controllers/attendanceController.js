@@ -386,10 +386,180 @@ const exportAttendanceCSV = async (req, res) => {
     }
 };
 
+// @desc    Start or End Break (Lunch / Tea / Short)
+// @route   POST /api/attendance/break
+// @access  Private
+const toggleBreak = async (req, res) => {
+    const { action, breakType, sessionId } = req.body; // action: 'start' | 'end'
+    const today = moment().format("YYYY-MM-DD");
+    const now = new Date();
+
+    try {
+        const attendance = await Attendance.findOne({
+            user: req.user._id,
+            date: today,
+        });
+
+        let session = null;
+        if (sessionId) {
+            session = await LoginSession.findOne({ sessionId, user: req.user._id });
+        }
+
+        if (action === "start") {
+            const selectedType = breakType || "lunch";
+
+            if (attendance) {
+                if (attendance.isOnBreak) {
+                    return res.status(400).json({ message: "You are already on a break" });
+                }
+                attendance.isOnBreak = true;
+                attendance.currentBreakType = selectedType;
+                attendance.breaks.push({
+                    breakType: selectedType,
+                    startTime: now,
+                });
+                await attendance.save();
+            }
+
+            if (session) {
+                session.sessionStatus = "on_break";
+                session.currentBreak = {
+                    isOnBreak: true,
+                    breakType: selectedType,
+                    startTime: now,
+                };
+                session.breaks.push({
+                    breakType: selectedType,
+                    startTime: now,
+                });
+                await session.save();
+            }
+
+            // Socket notify admin
+            try {
+                const socket = require("../socket");
+                const io = socket.getIO();
+                io.emit("session-status-update", {
+                    sessionId: session?.sessionId || null,
+                    userId: req.user._id,
+                    sessionStatus: "on_break",
+                    breakType: selectedType,
+                    isOnBreak: true,
+                    startTime: now,
+                });
+            } catch (err) {}
+
+            return res.json({
+                success: true,
+                message: `${selectedType === "lunch" ? "Lunch" : "Tea"} break started. Inactivity alerts paused.`,
+                isOnBreak: true,
+                currentBreakType: selectedType,
+                breakStartTime: now,
+                totalBreakMinutes: attendance?.totalBreakMinutes || session?.totalBreakMinutes || 0,
+            });
+        } else if (action === "end") {
+            let breakMinutesAdded = 0;
+
+            if (attendance && attendance.isOnBreak) {
+                attendance.isOnBreak = false;
+                const activeBreak = attendance.breaks.slice().reverse().find(b => !b.endTime);
+                if (activeBreak) {
+                    activeBreak.endTime = now;
+                    const diffMs = Math.max(0, now - new Date(activeBreak.startTime));
+                    activeBreak.durationMinutes = Math.round(diffMs / 60000);
+                    breakMinutesAdded = activeBreak.durationMinutes;
+                }
+                attendance.totalBreakMinutes = attendance.breaks.reduce((acc, b) => acc + (b.durationMinutes || 0), 0);
+                attendance.currentBreakType = null;
+                await attendance.save();
+            }
+
+            if (session) {
+                session.sessionStatus = "active";
+                session.currentBreak = {
+                    isOnBreak: false,
+                    breakType: null,
+                    startTime: null,
+                };
+                const sessActiveBreak = session.breaks.slice().reverse().find(b => !b.endTime);
+                if (sessActiveBreak) {
+                    sessActiveBreak.endTime = now;
+                    const diffMs = Math.max(0, now - new Date(sessActiveBreak.startTime));
+                    sessActiveBreak.durationMinutes = Math.round(diffMs / 60000);
+                }
+                session.totalBreakMinutes = session.breaks.reduce((acc, b) => acc + (b.durationMinutes || 0), 0);
+                session.lastHeartbeat = now;
+                await session.save();
+            }
+
+            // Socket notify admin
+            try {
+                const socket = require("../socket");
+                const io = socket.getIO();
+                io.emit("session-status-update", {
+                    sessionId: session?.sessionId || null,
+                    userId: req.user._id,
+                    sessionStatus: "active",
+                    isOnBreak: false,
+                });
+            } catch (err) {}
+
+            return res.json({
+                success: true,
+                message: "Break ended. Work resumed.",
+                isOnBreak: false,
+                currentBreakType: null,
+                totalBreakMinutes: attendance?.totalBreakMinutes || session?.totalBreakMinutes || 0,
+            });
+        } else {
+            return res.status(400).json({ message: "Invalid action. Must be 'start' or 'end'." });
+        }
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Get current break status
+// @route   GET /api/attendance/break/status
+// @access  Private
+const getBreakStatus = async (req, res) => {
+    const today = moment().format("YYYY-MM-DD");
+    try {
+        const attendance = await Attendance.findOne({
+            user: req.user._id,
+            date: today,
+        });
+
+        let isOnBreak = attendance?.isOnBreak || false;
+        let currentBreakType = attendance?.currentBreakType || null;
+        let totalBreakMinutes = attendance?.totalBreakMinutes || 0;
+        let activeBreakStartTime = null;
+
+        if (attendance?.breaks?.length > 0) {
+            const activeBreak = attendance.breaks.slice().reverse().find(b => !b.endTime);
+            if (activeBreak) {
+                activeBreakStartTime = activeBreak.startTime;
+            }
+        }
+
+        res.json({
+            isOnBreak,
+            currentBreakType,
+            activeBreakStartTime,
+            totalBreakMinutes,
+            allowedBreakMinutes: 30,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     postHeartbeat,
     checkIn,
     checkOut,
+    toggleBreak,
+    getBreakStatus,
     getMyAttendance,
     getAllAttendance,
     getAllSessions,

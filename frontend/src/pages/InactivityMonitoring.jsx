@@ -201,10 +201,17 @@ const InactivityMonitoring = () => {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 text-xs">
+                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-2 text-xs">
                                         <div className="p-3 bg-slate-50 rounded-xl">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase block">Inactivity Duration</span>
                                             <span className="text-base font-black text-rose-600">{alert.inactivityDurationMinutes} minutes</span>
+                                        </div>
+                                        <div className="p-3 bg-rose-50/70 border border-rose-100 rounded-xl">
+                                            <span className="text-[10px] font-bold text-rose-500 uppercase block">Inactive Time Window</span>
+                                            <span className="font-bold text-rose-900 block">
+                                                {formatIST(alert.inactiveFrom || alert.lastHeartbeat)}
+                                            </span>
+                                            <span className="text-[10px] text-slate-500">to {alert.inactiveTo ? formatIST(alert.inactiveTo) : "Present"}</span>
                                         </div>
                                         <div className="p-3 bg-slate-50 rounded-xl">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase block">Last Confirmed Heartbeat</span>
@@ -265,7 +272,7 @@ const InactivityMonitoring = () => {
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-black uppercase tracking-wider text-[10px]">
                                     <th className="py-4 px-6">Employee</th>
-                                    <th className="py-4 px-6">Alert Trigger Time</th>
+                                    <th className="py-4 px-6">Inactivity Time Window (IST)</th>
                                     <th className="py-4 px-6">Total Inactivity</th>
                                     <th className="py-4 px-6">Status</th>
                                     <th className="py-4 px-6">Resolution Time & Reason</th>
@@ -280,7 +287,14 @@ const InactivityMonitoring = () => {
                                                 <span className="font-black text-slate-900 block">{h.user?.name}</span>
                                                 <span className="text-[11px] text-slate-400">{h.user?.department?.name || "Staff"}</span>
                                             </td>
-                                            <td className="py-4 px-6 font-semibold">{formatIST(h.alertTime)}</td>
+                                            <td className="py-4 px-6">
+                                                <span className="font-semibold block text-slate-800">
+                                                    {formatIST(h.inactiveFrom || h.alertTime)}
+                                                </span>
+                                                <span className="text-[11px] text-slate-500">
+                                                    to {h.inactiveTo || h.resolvedAt ? formatIST(h.inactiveTo || h.resolvedAt) : "Ongoing"}
+                                                </span>
+                                            </td>
                                             <td className="py-4 px-6 font-bold text-slate-800">{h.inactivityDurationMinutes} mins</td>
                                             <td className="py-4 px-6">
                                                 <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${

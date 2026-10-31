@@ -4,6 +4,8 @@ const {
     postHeartbeat,
     checkIn,
     checkOut,
+    toggleBreak,
+    getBreakStatus,
     getMyAttendance,
     getAllAttendance,
     getAllSessions,
@@ -18,6 +20,8 @@ const { protect, admin } = require("../middleware/authMiddleware");
 router.post("/heartbeat", protect, postHeartbeat);
 router.post("/checkin", protect, checkIn);
 router.post("/checkout", protect, checkOut);
+router.post("/break", protect, toggleBreak);
+router.get("/break/status", protect, getBreakStatus);
 router.get("/my", protect, getMyAttendance);
 router.post("/correction", protect, requestCorrection);
 

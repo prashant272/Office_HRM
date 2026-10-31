@@ -19,9 +19,60 @@ export const SessionProvider = ({ children }) => {
     const [sessionStatus, setSessionStatus] = useState("active");
     const [lastHeartbeat, setLastHeartbeat] = useState(new Date());
     const [isConnected, setIsConnected] = useState(true);
+    const [isOnBreak, setIsOnBreak] = useState(false);
+    const [currentBreakType, setCurrentBreakType] = useState(null);
+    const [breakStartTime, setBreakStartTime] = useState(null);
+    const [totalBreakMinutes, setTotalBreakMinutes] = useState(0);
+
     const lastInteractionRef = useRef(Date.now());
     const hasInteractionRef = useRef(false);
     const heartbeatTimerRef = useRef(null);
+    const workerRef = useRef(null);
+
+    // Fetch initial break status
+    const refreshBreakStatus = useCallback(async () => {
+        try {
+            const res = await API.get("/attendance/break/status");
+            if (res.data) {
+                setIsOnBreak(res.data.isOnBreak || false);
+                setCurrentBreakType(res.data.currentBreakType || null);
+                setBreakStartTime(res.data.activeBreakStartTime ? new Date(res.data.activeBreakStartTime) : null);
+                setTotalBreakMinutes(res.data.totalBreakMinutes || 0);
+            }
+        } catch (e) {
+            // Ignore if unauthenticated
+        }
+    }, []);
+
+    // Toggle Break Action (start or end)
+    const toggleBreak = async (breakType = "lunch") => {
+        const userInfo = localStorage.getItem("userInfo") ? JSON.parse(localStorage.getItem("userInfo")) : null;
+        const action = isOnBreak ? "end" : "start";
+
+        try {
+            const res = await API.post("/attendance/break", {
+                action,
+                breakType: isOnBreak ? currentBreakType : breakType,
+                sessionId: userInfo?.sessionId,
+            });
+
+            if (res.data.success) {
+                setIsOnBreak(res.data.isOnBreak);
+                setCurrentBreakType(res.data.currentBreakType);
+                setBreakStartTime(res.data.breakStartTime ? new Date(res.data.breakStartTime) : null);
+                setTotalBreakMinutes(res.data.totalBreakMinutes || 0);
+                if (res.data.isOnBreak) {
+                    setSessionStatus("on_break");
+                    toast.success(res.data.message || "Break started. Inactivity paused!");
+                } else {
+                    setSessionStatus("active");
+                    toast.success(res.data.message || "Break ended. Welcome back!");
+                }
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.message || "Failed to update break status");
+        }
+    };
 
     // Track user interactions (clicks, keys, scrolls) without recording sensitive text
     const recordUserInteraction = useCallback(() => {
@@ -100,20 +151,40 @@ export const SessionProvider = ({ children }) => {
         validateSession();
     }, []);
 
-    // Periodic Heartbeat loop (every 35 seconds)
+    // Periodic Heartbeat loop + Un-throttled Background Web Worker
     useEffect(() => {
         if (!sessionData?.sessionId) return;
+
+        // Fetch initial break status
+        refreshBreakStatus();
 
         // Send initial heartbeat
         sendHeartbeat();
 
-        // 35-second heartbeat interval
-        heartbeatTimerRef.current = setInterval(sendHeartbeat, 35000);
+        // Standard timer (for foreground / active window)
+        heartbeatTimerRef.current = setInterval(sendHeartbeat, 30000);
+
+        // Dedicated Web Worker (NEVER throttled when laptop is on and user is working in another app/tab!)
+        try {
+            if (window.Worker) {
+                const worker = new Worker("/heartbeat-worker.js");
+                workerRef.current = worker;
+                worker.postMessage("start");
+                worker.onmessage = (e) => {
+                    if (e.data === "tick") {
+                        sendHeartbeat();
+                    }
+                };
+            }
+        } catch (workerErr) {
+            console.warn("Background web worker unavailable, using standard timers", workerErr);
+        }
 
         // Resume heartbeat when tab becomes visible again
         const handleVisibilityChange = () => {
             if (document.visibilityState === "visible") {
                 sendHeartbeat();
+                refreshBreakStatus();
             }
         };
 
@@ -132,11 +203,16 @@ export const SessionProvider = ({ children }) => {
 
         return () => {
             if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+            if (workerRef.current) {
+                workerRef.current.postMessage("stop");
+                workerRef.current.terminate();
+                workerRef.current = null;
+            }
             document.removeEventListener("visibilitychange", handleVisibilityChange);
             window.removeEventListener("online", handleOnline);
             window.removeEventListener("offline", handleOffline);
         };
-    }, [sessionData?.sessionId, sendHeartbeat]);
+    }, [sessionData?.sessionId, sendHeartbeat, refreshBreakStatus]);
 
     // Explicit Logout
     const logout = async () => {
@@ -166,6 +242,12 @@ export const SessionProvider = ({ children }) => {
                 sessionStatus,
                 lastHeartbeat,
                 isConnected,
+                isOnBreak,
+                currentBreakType,
+                breakStartTime,
+                totalBreakMinutes,
+                toggleBreak,
+                refreshBreakStatus,
                 logout,
                 sendHeartbeat,
             }}

@@ -113,6 +113,32 @@ const authUser = async (req, res) => {
         const ipAddress = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "127.0.0.1";
         const userAgent = req.headers["user-agent"] || "";
 
+        // Ensure any previous lingering/stale sessions for this user are properly closed and resolved
+        const staleSessions = await LoginSession.find({
+            user: user._id,
+            isActive: true,
+        });
+
+        for (const stale of staleSessions) {
+            stale.isActive = false;
+            stale.logoutTime = now;
+            stale.sessionStatus = "logged_out";
+            stale.logoutReason = "session_expired";
+            await stale.save();
+
+            // Safely close and preserve all inactivity alert history for old sessions
+            const staleAlerts = await ActivityAlert.find({ session: stale._id, status: "active" });
+            for (const alert of staleAlerts) {
+                alert.status = "resolved";
+                alert.resolvedAt = now;
+                if (!alert.inactiveTo) {
+                    alert.inactiveTo = now;
+                }
+                alert.resolutionReason = "Session closed; employee logged in with fresh session";
+                await alert.save();
+            }
+        }
+
         // Create Server-side Login Session record
         const loginSession = await LoginSession.create({
             user: user._id,
@@ -170,7 +196,7 @@ const authUser = async (req, res) => {
             ipAddress,
         });
 
-        // Emit Socket Event for real-time dashboard update
+        // Emit Socket Event for real-time dashboard update (immediately activates the employee everywhere)
         try {
             const io = socket.getIO();
             io.emit("session-login", {
@@ -185,6 +211,12 @@ const authUser = async (req, res) => {
                 },
                 loginTime: now,
                 sessionStatus: "active",
+            });
+            io.emit("session-status-update", {
+                sessionId,
+                userId: user._id,
+                sessionStatus: "active",
+                lastHeartbeat: now,
             });
         } catch (e) {
             // Socket not yet ready
@@ -227,14 +259,17 @@ const logoutUser = async (req, res) => {
                 session.logoutReason = "explicit_logout";
                 await session.save();
 
-                // Auto-resolve any pending activity alert for this session
-                const alert = await ActivityAlert.findOne({ session: session._id, status: "active" });
-                if (alert) {
-                    alert.status = "resolved";
-                    alert.resolvedAt = now;
-                    alert.resolutionReason = "Session explicitly logged out";
-                    await alert.save();
+            // Auto-resolve any pending activity alert for this session while preserving full historical inactivity details
+            const activeAlerts = await ActivityAlert.find({ session: session._id, status: "active" });
+            for (const alert of activeAlerts) {
+                alert.status = "resolved";
+                alert.resolvedAt = now;
+                if (!alert.inactiveTo) {
+                    alert.inactiveTo = now;
                 }
+                alert.resolutionReason = "Session explicitly logged out";
+                await alert.save();
+            }
 
                 // Update Attendance checkOut time if not yet checked out
                 const today = moment().format("YYYY-MM-DD");

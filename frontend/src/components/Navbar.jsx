@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Bell, User, Clock, WifiOff, Menu } from "lucide-react";
+import { Bell, User, Clock, WifiOff, Menu, Coffee, Utensils, Play, Square } from "lucide-react";
 import { useSocket } from "../context/SocketContext";
 import { useSession } from "../context/SessionContext";
 import moment from "moment";
@@ -7,9 +7,37 @@ import moment from "moment";
 const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
     const userInfo = JSON.parse(localStorage.getItem("userInfo"));
     const socket = useSocket();
-    const { sessionStatus, isConnected } = useSession();
+    const {
+        sessionStatus,
+        isConnected,
+        isOnBreak,
+        currentBreakType,
+        breakStartTime,
+        totalBreakMinutes,
+        toggleBreak,
+    } = useSession();
     const [currentTime, setCurrentTime] = useState(moment().utcOffset("+05:30").format("hh:mm:ss A"));
     const [unreadAlerts, setUnreadAlerts] = useState(0);
+    const [breakElapsed, setBreakElapsed] = useState("00:00");
+
+    // Live break timer ticker
+    useEffect(() => {
+        if (!isOnBreak || !breakStartTime) {
+            setBreakElapsed("00:00");
+            return;
+        }
+
+        const tick = () => {
+            const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(breakStartTime).getTime()) / 1000));
+            const mins = Math.floor(diffSeconds / 60);
+            const secs = diffSeconds % 60;
+            setBreakElapsed(`${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`);
+        };
+
+        tick();
+        const interval = setInterval(tick, 1000);
+        return () => clearInterval(interval);
+    }, [isOnBreak, breakStartTime]);
 
     // Live clock in IST (Asia/Kolkata)
     useEffect(() => {
@@ -64,7 +92,14 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
                 {/* Session Live Status Indicator (hidden on small mobile screens) */}
                 <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-xl border border-slate-200/80 bg-slate-50/50">
                     {isConnected ? (
-                        sessionStatus === "active" ? (
+                        isOnBreak ? (
+                            <>
+                                <span className="w-2.5 h-2.5 rounded-full bg-purple-500 animate-pulse"></span>
+                                <span className="text-xs font-bold text-purple-700 capitalize">
+                                    On {currentBreakType || "Lunch"} Break ({breakElapsed})
+                                </span>
+                            </>
+                        ) : sessionStatus === "active" ? (
                             <>
                                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                 <span className="text-xs font-bold text-emerald-700">Session Active</span>
@@ -84,8 +119,40 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
                 </div>
             </div>
 
-            {/* Right: Notifications & User Profile */}
-            <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
+            {/* Right: Break Controls, Notifications & User Profile */}
+            <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+                {/* Employee Break Controls (Lunch / Tea - 30 min total allowance) */}
+                {isOnBreak ? (
+                    <button
+                        onClick={() => toggleBreak()}
+                        className="flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-sm transition-all animate-pulse"
+                        title="Click to resume work"
+                    >
+                        <Square size={13} className="fill-white" />
+                        <span>End Break ({breakElapsed})</span>
+                    </button>
+                ) : (
+                    <div className="flex items-center space-x-1 bg-slate-100/90 p-1 rounded-2xl border border-slate-200/70">
+                        <button
+                            onClick={() => toggleBreak("lunch")}
+                            className="flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-purple-50 text-purple-800 rounded-xl text-[11px] font-extrabold shadow-2xs border border-purple-200 transition-all"
+                            title="Lunch Break (30 min allowance, pauses inactivity)"
+                        >
+                            <Utensils size={12} className="text-purple-600" />
+                            <span className="hidden sm:inline">Lunch Break</span>
+                            <span className="sm:hidden">Lunch</span>
+                        </button>
+                        <button
+                            onClick={() => toggleBreak("tea")}
+                            className="flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-amber-50 text-amber-800 rounded-xl text-[11px] font-extrabold shadow-2xs border border-amber-200 transition-all"
+                            title="Tea / Quick Break (pauses inactivity)"
+                        >
+                            <Coffee size={12} className="text-amber-600" />
+                            <span className="hidden sm:inline">Tea Break</span>
+                            <span className="sm:hidden">Tea</span>
+                        </button>
+                    </div>
+                )}
                 {isAdmin && (
                     <button
                         onClick={() => setUnreadAlerts(0)}

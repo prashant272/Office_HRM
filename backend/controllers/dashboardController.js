@@ -93,6 +93,7 @@ const getStats = async (req, res) => {
             const loggedInEmployees = loggedInUserIds.size;
 
             const activeCount = activeSessions.filter((s) => s.sessionStatus === "active").length;
+            const onBreakCount = activeSessions.filter((s) => s.sessionStatus === "on_break").length;
             const inactiveCount = activeSessions.filter((s) => s.sessionStatus === "inactive").length;
             const missingHeartbeatCount = activeSessions.filter((s) => s.sessionStatus === "heartbeat_missing").length;
             const loggedOutEmployees = Math.max(0, totalEmployees - loggedInEmployees);
@@ -125,6 +126,7 @@ const getStats = async (req, res) => {
             // Session Status Distribution (Pie Chart)
             const sessionDistribution = [
                 { name: "Active Now", value: activeCount, color: "#10b981" },
+                { name: "On Break (Exempt)", value: onBreakCount, color: "#8b5cf6" },
                 { name: "Missing Heartbeat", value: missingHeartbeatCount, color: "#f59e0b" },
                 { name: "Inactive > 10m", value: inactiveCount, color: "#ef4444" },
                 { name: "Logged Out", value: loggedOutEmployees, color: "#94a3b8" },
@@ -143,6 +145,7 @@ const getStats = async (req, res) => {
                 totalEmployees,
                 loggedInEmployees,
                 activeEmployees: activeCount,
+                onBreakEmployees: onBreakCount,
                 inactiveEmployees: inactiveCount,
                 missingHeartbeatEmployees: missingHeartbeatCount,
                 loggedOutEmployees,

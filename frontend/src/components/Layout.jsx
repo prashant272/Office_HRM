@@ -24,9 +24,9 @@ const Layout = ({ children }) => {
 
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-            <main className="lg:ml-72 ml-0 flex flex-col min-h-screen relative w-full min-w-0 overflow-x-hidden transition-all duration-300">
+            <main className="lg:pl-72 pl-0 flex flex-col min-h-screen relative w-full min-w-0 max-w-full overflow-x-hidden transition-all duration-300">
                 <Navbar onToggleSidebar={() => setSidebarOpen((prev) => !prev)} isSidebarOpen={sidebarOpen} />
-                <div className="p-4 sm:p-6 lg:p-10 flex-1 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out w-full max-w-full overflow-x-hidden">
+                <div className="p-4 sm:p-6 lg:p-8 flex-1 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out w-full max-w-full overflow-x-hidden box-border">
                     {children}
                 </div>
             </main>

@@ -38,6 +38,26 @@ const attendanceSchema = new mongoose.Schema(
         workDuration: {
             type: Number, // in minutes
         },
+        breaks: [
+            {
+                breakType: { type: String, enum: ["lunch", "tea", "short"], default: "lunch" },
+                startTime: { type: Date, required: true },
+                endTime: { type: Date },
+                durationMinutes: { type: Number, default: 0 },
+            }
+        ],
+        totalBreakMinutes: {
+            type: Number,
+            default: 0,
+        },
+        isOnBreak: {
+            type: Boolean,
+            default: false,
+        },
+        currentBreakType: {
+            type: String,
+            default: null,
+        },
         shift: {
             type: String,
             default: "General Shift (09:30 - 18:30)",
