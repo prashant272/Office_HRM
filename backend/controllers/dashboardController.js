@@ -28,6 +28,8 @@ const getStats = async (req, res) => {
         // 1. ADMIN PANEL DASHBOARD METRICS
         // ==========================================
         if (req.user.role === "admin" || req.user.role === "manager") {
+            const startOfDay = moment().startOf("day").toDate();
+
             // Execute all queries in parallel via Promise.all
             const [
                 totalEmployees,
@@ -53,6 +55,10 @@ const getStats = async (req, res) => {
                 LoginSession.find({
                     isActive: true,
                     logoutTime: null,
+                    $or: [
+                        { attendanceDate: today },
+                        { loginTime: { $gte: startOfDay } }
+                    ]
                 }).populate("user", "name email department designation role").lean(),
                 Attendance.countDocuments({ date: today }),
                 Attendance.countDocuments({ date: today, status: "Present" }),
@@ -62,7 +68,10 @@ const getStats = async (req, res) => {
                 FieldMeeting.countDocuments({ scheduledDate: today, status: "Completed" }),
                 FieldMeeting.countDocuments({ approvalStatus: "Pending_Approval" }),
                 Attendance.countDocuments({ "correctionRequest.status": "Pending" }),
-                ActivityAlert.find({ status: "active" })
+                ActivityAlert.find({
+                    status: "active",
+                    alertTime: { $gte: startOfDay }
+                })
                     .populate({
                         path: "user",
                         select: "name email employeeId department designation",

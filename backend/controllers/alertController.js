@@ -6,7 +6,13 @@ const AuditLog = require("../models/AuditLog");
 // @access  Private/Admin
 const getActiveAlerts = async (req, res) => {
     try {
-        const alerts = await ActivityAlert.find({ status: "active" })
+        const moment = require("moment");
+        const startOfDay = moment().startOf("day").toDate();
+
+        const alerts = await ActivityAlert.find({
+            status: "active",
+            alertTime: { $gte: startOfDay }
+        })
             .populate({
                 path: "user",
                 select: "name email employeeId department designation phone",

@@ -22,6 +22,7 @@ const runInactivityCheck = async () => {
     try {
         const thresholdMinutes = await getInactivityThreshold();
         const now = Date.now();
+        const todayStr = moment().format("YYYY-MM-DD");
         let io;
         try {
             io = socket.getIO();
@@ -37,14 +38,40 @@ const runInactivityCheck = async () => {
         }).populate("user", "name email role department designation");
 
         for (const session of activeSessions) {
+            const sessionDate = session.attendanceDate || (session.loginTime ? moment(session.loginTime).format("YYYY-MM-DD") : null);
+            const lastHbTime = session.lastHeartbeat ? session.lastHeartbeat.getTime() : session.loginTime.getTime();
+            const diffMinutes = (now - lastHbTime) / 60000;
+
+            // 1. AUTO-EXPIRE STALE PAST-DATE SESSIONS (e.g., from yesterday or abandoned sessions)
+            if (sessionDate && sessionDate !== todayStr) {
+                // If it is from a previous date and has had no heartbeat for > 60 minutes, terminate session cleanly
+                if (diffMinutes >= 60) {
+                    session.isActive = false;
+                    session.logoutTime = session.lastHeartbeat || session.loginTime;
+                    session.sessionStatus = "logged_out";
+                    session.logoutReason = "session_expired";
+                    await session.save();
+
+                    // Auto-resolve any lingering active alert so it doesn't show in "Active Inactivity Alerts"
+                    const staleAlerts = await ActivityAlert.find({ session: session._id, status: "active" });
+                    for (const alert of staleAlerts) {
+                        alert.status = "resolved";
+                        alert.resolvedAt = session.logoutTime;
+                        if (!alert.inactiveTo) {
+                            alert.inactiveTo = session.logoutTime;
+                        }
+                        alert.resolutionReason = "Session expired across dates";
+                        await alert.save();
+                    }
+                    continue;
+                }
+            }
+
             // IF EMPLOYEE IS CURRENTLY ON AN AUTHORIZED BREAK (Lunch / Tea / Short)
             if (session.currentBreak?.isOnBreak || session.sessionStatus === "on_break") {
                 // Do not mark as inactive and do not create inactivity alerts during break
                 continue;
             }
-
-            const lastHbTime = session.lastHeartbeat ? session.lastHeartbeat.getTime() : session.loginTime.getTime();
-            const diffMinutes = (now - lastHbTime) / 60000;
 
             if (diffMinutes >= thresholdMinutes) {
                 // Inactive session: No heartbeat for >= threshold (default 10 mins)
