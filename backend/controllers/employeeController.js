@@ -15,24 +15,46 @@ const getEmployees = async (req, res) => {
             .select("-password")
             .sort({ createdAt: -1 });
 
+        const moment = require("moment");
+        const now = Date.now();
+
         const employeesWithDetails = await Promise.all(
             employees.map(async (emp) => {
                 const lastAttendance = await Attendance.findOne({ user: emp._id }).sort({ date: -1, checkIn: -1 });
                 const latestSession = await LoginSession.findOne({ user: emp._id }).sort({ loginTime: -1 });
                 const meetingCount = await FieldMeeting.countDocuments({ employee: emp._id });
 
+                let sessionPayload = null;
+                if (latestSession) {
+                    // Check if heartbeat is truly fresh (< 2 mins)
+                    const lastHbTime = latestSession.lastHeartbeat ? new Date(latestSession.lastHeartbeat).getTime() : new Date(latestSession.loginTime).getTime();
+                    const diffMinutes = (now - lastHbTime) / 60000;
+
+                    let liveStatus = latestSession.sessionStatus;
+                    let isTrulyActive = latestSession.isActive && !latestSession.logoutTime;
+
+                    if (!isTrulyActive) {
+                        liveStatus = "logged_out";
+                    } else if (diffMinutes >= 10) {
+                        liveStatus = "inactive";
+                    } else if (diffMinutes >= 2) {
+                        liveStatus = "heartbeat_missing";
+                    }
+
+                    sessionPayload = {
+                        sessionId: latestSession.sessionId,
+                        loginTime: latestSession.loginTime,
+                        lastHeartbeat: latestSession.lastHeartbeat,
+                        sessionStatus: liveStatus,
+                        isActive: isTrulyActive && diffMinutes < 10,
+                        diffMinutes: Math.round(diffMinutes),
+                    };
+                }
+
                 return {
                     ...emp._doc,
                     lastAttendance,
-                    latestSession: latestSession
-                        ? {
-                              sessionId: latestSession.sessionId,
-                              loginTime: latestSession.loginTime,
-                              lastHeartbeat: latestSession.lastHeartbeat,
-                              sessionStatus: latestSession.sessionStatus,
-                              isActive: latestSession.isActive,
-                          }
-                        : null,
+                    latestSession: sessionPayload,
                     meetingCount,
                 };
             })

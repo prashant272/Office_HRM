@@ -554,6 +554,71 @@ const getBreakStatus = async (req, res) => {
     }
 };
 
+// @desc    Force Signout All Employees & Close Day (Admin only)
+// @route   POST /api/attendance/signout-all
+// @access  Private/Admin
+const forceSignoutAll = async (req, res) => {
+    try {
+        const now = new Date();
+        const ActivityAlert = require("../models/ActivityAlert");
+
+        // 1. Mark all active sessions as logged_out
+        const sessionRes = await LoginSession.updateMany(
+            { isActive: true },
+            {
+                $set: {
+                    isActive: false,
+                    logoutTime: now,
+                    sessionStatus: "logged_out",
+                    logoutReason: "admin_revoked",
+                },
+            }
+        );
+
+        // 2. Resolve all active alerts
+        const alertRes = await ActivityAlert.updateMany(
+            { status: "active" },
+            {
+                $set: {
+                    status: "resolved",
+                    resolvedAt: now,
+                    inactiveTo: now,
+                    resolutionReason: "Admin force closed day / signout all",
+                },
+            }
+        );
+
+        // 3. Close open attendances
+        const openAtt = await Attendance.find({ checkOut: null });
+        for (const a of openAtt) {
+            a.checkOut = now;
+            if (a.checkIn) {
+                const diffMs = Math.max(0, now.getTime() - new Date(a.checkIn).getTime());
+                a.workDuration = Math.round(diffMs / 60000);
+            }
+            await a.save();
+        }
+
+        // 4. Broadcast via Socket
+        try {
+            const socket = require("../socket");
+            const io = socket.getIO();
+            io.emit("session-logout-all", { timestamp: now });
+            io.emit("session-status-update", { sessionStatus: "logged_out" });
+        } catch (e) {}
+
+        res.json({
+            success: true,
+            message: "All employees have been signed out successfully. Ready for fresh attendance tomorrow!",
+            sessionsClosed: sessionRes.modifiedCount,
+            alertsResolved: alertRes.modifiedCount,
+            attendancesClosed: openAtt.length,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     postHeartbeat,
     checkIn,
@@ -567,4 +632,5 @@ module.exports = {
     getCorrections,
     reviewCorrection,
     exportAttendanceCSV,
+    forceSignoutAll,
 };

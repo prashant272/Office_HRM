@@ -95,7 +95,8 @@ export const SessionProvider = ({ children }) => {
     // Send Heartbeat to server
     const sendHeartbeat = useCallback(async () => {
         const userInfo = localStorage.getItem("userInfo") ? JSON.parse(localStorage.getItem("userInfo")) : null;
-        if (!userInfo || !userInfo.sessionId || !userInfo.token) return;
+        // If this is an Admin viewing the Employee portal (Impersonation Mode), NEVER send heartbeats!
+        if (!userInfo || !userInfo.sessionId || !userInfo.token || userInfo.isImpersonated) return;
 
         try {
             const hasInteraction = hasInteractionRef.current;

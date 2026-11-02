@@ -15,7 +15,8 @@ import {
     Check,
     X,
     Wifi,
-    FileText
+    FileText,
+    LogOut
 } from "lucide-react";
 import moment from "moment";
 import { toast } from "react-hot-toast";
@@ -198,13 +199,32 @@ const Attendance = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                     {isAdmin && (
-                        <button
-                            onClick={handleExportCSV}
-                            className="w-full sm:w-auto px-5 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-black text-slate-700 hover:bg-slate-50 flex items-center justify-center space-x-2 shadow-sm transition-all"
-                        >
-                            <Download size={15} />
-                            <span>Export CSV</span>
-                        </button>
+                        <>
+                            <button
+                                onClick={async () => {
+                                    if (window.confirm("Are you sure you want to sign out all employees for today and close their active sessions?")) {
+                                        try {
+                                            const res = await API.post("/attendance/signout-all");
+                                            toast.success(res.data.message || "All employees signed out successfully!");
+                                            fetchData();
+                                        } catch (err) {
+                                            toast.error(err.response?.data?.message || "Failed to signout employees");
+                                        }
+                                    }
+                                }}
+                                className="w-full sm:w-auto px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-black shadow-md transition-all flex items-center justify-center space-x-2"
+                            >
+                                <LogOut size={15} />
+                                <span>Sign Out All Employees</span>
+                            </button>
+                            <button
+                                onClick={handleExportCSV}
+                                className="w-full sm:w-auto px-5 py-3 bg-white border border-slate-200 rounded-2xl text-xs font-black text-slate-700 hover:bg-slate-50 flex items-center justify-center space-x-2 shadow-sm transition-all"
+                            >
+                                <Download size={15} />
+                                <span>Export CSV</span>
+                            </button>
+                        </>
                     )}
                     {!isAdmin && (
                         <button

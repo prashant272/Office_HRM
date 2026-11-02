@@ -18,10 +18,12 @@ import {
     Activity,
     Sliders,
     Search,
-    Loader2
+    Loader2,
+    LogIn
 } from "lucide-react";
 import moment from "moment";
 import { toast } from "react-hot-toast";
+import { useSocket } from "../context/SocketContext";
 
 const formatIST = (dateStr) => {
     if (!dateStr) return "—";
@@ -93,10 +95,30 @@ const Employees = () => {
         }
     };
 
+    const socket = useSocket();
+
     useEffect(() => {
         fetchEmployees();
         fetchDepartments();
     }, []);
+
+    // Listen to real-time session login/logout to sync employee status immediately
+    useEffect(() => {
+        if (!socket) return;
+        const handleSessionEvent = () => {
+            fetchEmployees();
+        };
+
+        socket.on("session-login", handleSessionEvent);
+        socket.on("session-logout", handleSessionEvent);
+        socket.on("session-status-update", handleSessionEvent);
+
+        return () => {
+            socket.off("session-login", handleSessionEvent);
+            socket.off("session-logout", handleSessionEvent);
+            socket.off("session-status-update", handleSessionEvent);
+        };
+    }, [socket]);
 
     // Open Add Modal
     const handleOpenAdd = () => {
@@ -316,7 +338,8 @@ const Employees = () => {
                             {filteredEmployees.length > 0 ? (
                                 filteredEmployees.map((emp) => {
                                     const isOnline = emp.latestSession?.isActive && emp.latestSession?.sessionStatus === "active";
-                                    const isMissing = emp.latestSession?.isActive && emp.latestSession?.sessionStatus === "heartbeat_missing";
+                                    const isOnBreak = emp.latestSession?.sessionStatus === "on_break";
+                                    const isMissing = emp.latestSession?.sessionStatus === "heartbeat_missing";
 
                                     return (
                                         <tr key={emp._id} className="hover:bg-slate-50/70 transition-colors">
@@ -348,6 +371,11 @@ const Employees = () => {
                                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                                         Online Now
                                                     </span>
+                                                ) : isOnBreak ? (
+                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></span>
+                                                        On Break
+                                                    </span>
                                                 ) : isMissing ? (
                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800">
                                                         Tab Closed
@@ -364,6 +392,29 @@ const Employees = () => {
                                                 </span>
                                             </td>
                                             <td className="py-4 px-6 text-right space-x-2">
+                                                <button
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await API.post(`/auth/impersonate/${emp._id}`);
+                                                            if (res.data) {
+                                                                // Store admin session for return
+                                                                const currentAdmin = localStorage.getItem("userInfo");
+                                                                localStorage.setItem("adminBackupUser", currentAdmin);
+                                                                // Set employee session without heartbeat
+                                                                localStorage.setItem("userInfo", JSON.stringify(res.data));
+                                                                toast.success(`Switching to ${emp.name}'s Portal (Admin Mode)`);
+                                                                window.location.href = "/dashboard";
+                                                            }
+                                                        } catch (err) {
+                                                            toast.error(err.response?.data?.message || "Failed to switch account");
+                                                        }
+                                                    }}
+                                                    className="p-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-primary transition-all font-bold inline-flex items-center gap-1 text-[11px]"
+                                                    title="Login to Employee Portal (Passive / No Inactivity Impact)"
+                                                >
+                                                    <LogIn size={13} />
+                                                    <span>Login</span>
+                                                </button>
                                                 <button
                                                     onClick={() => handleOpenHistory(emp._id)}
                                                     className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all font-bold inline-flex items-center gap-1 text-[11px]"

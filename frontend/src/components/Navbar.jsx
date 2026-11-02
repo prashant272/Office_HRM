@@ -121,6 +121,24 @@ const Navbar = ({ onToggleSidebar, isSidebarOpen }) => {
 
             {/* Right: Break Controls, Notifications & User Profile */}
             <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+                {/* Admin Impersonation Return Banner / Button */}
+                {userInfo?.isImpersonated && (
+                    <button
+                        onClick={() => {
+                            const backupAdmin = localStorage.getItem("adminBackupUser");
+                            if (backupAdmin) {
+                                localStorage.setItem("userInfo", backupAdmin);
+                                localStorage.removeItem("adminBackupUser");
+                                window.location.href = "/employees";
+                            }
+                        }}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center gap-1.5 animate-pulse"
+                        title="Return to Super Admin Account"
+                    >
+                        <span>Admin View Mode: Return to Admin</span>
+                    </button>
+                )}
+
                 {/* Employee Break Controls (Lunch / Tea - 30 min total allowance) */}
                 {isOnBreak ? (
                     <button

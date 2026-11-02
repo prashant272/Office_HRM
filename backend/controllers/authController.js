@@ -294,7 +294,7 @@ const logoutUser = async (req, res) => {
                     ipAddress: req.ip || "127.0.0.1",
                 });
 
-                // Emit Socket Event
+                // Emit Socket Event to update admin dashboard immediately
                 try {
                     const io = socket.getIO();
                     io.emit("session-logout", {
@@ -302,6 +302,12 @@ const logoutUser = async (req, res) => {
                         userId: req.user._id,
                         logoutTime: now,
                         sessionStatus: "logged_out",
+                    });
+                    io.emit("session-status-update", {
+                        sessionId,
+                        userId: req.user._id,
+                        sessionStatus: "logged_out",
+                        logoutTime: now,
                     });
                 } catch (e) {
                     // Socket not ready
@@ -418,6 +424,42 @@ const updateUserProfile = async (req, res) => {
     }
 };
 
+// @desc    Admin Impersonate Employee (View employee panel without affecting live attendance/active counters)
+// @route   POST /api/auth/impersonate/:id
+// @access  Private/Admin
+const impersonateEmployee = async (req, res) => {
+    try {
+        if (req.user.role !== "admin" && req.user.role !== "manager") {
+            return res.status(403).json({ message: "Only administrators can impersonate employees" });
+        }
+
+        const targetUser = await User.findById(req.params.id).populate("department");
+        if (!targetUser) {
+            return res.status(404).json({ message: "Employee not found" });
+        }
+
+        res.json({
+            _id: targetUser._id,
+            employeeId: targetUser.employeeId || "EMP-" + targetUser._id.toString().slice(-4),
+            name: targetUser.name,
+            email: targetUser.email,
+            role: targetUser.role,
+            department: targetUser.department,
+            designation: targetUser.designation,
+            workingSchedule: targetUser.workingSchedule,
+            permissions: targetUser.permissions,
+            token: generateToken(targetUser._id),
+            // IMPERSONATION FLAGS: No real session, heartbeat skipped so user is never marked active
+            isImpersonated: true,
+            impersonatedBy: req.user._id,
+            sessionId: null,
+            sessionStatus: "offline",
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     registerUser,
     authUser,
@@ -425,4 +467,5 @@ module.exports = {
     getSessionStatus,
     getUserProfile,
     updateUserProfile,
+    impersonateEmployee,
 };

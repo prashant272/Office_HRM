@@ -13,6 +13,7 @@ const {
     getCorrections,
     reviewCorrection,
     exportAttendanceCSV,
+    forceSignoutAll,
 } = require("../controllers/attendanceController");
 const { protect, admin } = require("../middleware/authMiddleware");
 
@@ -26,6 +27,7 @@ router.get("/my", protect, getMyAttendance);
 router.post("/correction", protect, requestCorrection);
 
 // Admin-only Routes
+router.post("/signout-all", protect, admin, forceSignoutAll);
 router.get("/", protect, admin, getAllAttendance);
 router.get("/sessions", protect, admin, getAllSessions);
 router.get("/corrections", protect, admin, getCorrections);
