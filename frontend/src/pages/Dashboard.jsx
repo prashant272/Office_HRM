@@ -428,9 +428,9 @@ const Dashboard = () => {
                                     <tr className="border-b border-slate-100 text-slate-400 font-black uppercase tracking-wider text-[10px]">
                                         <th className="py-3 px-4">Employee</th>
                                         <th className="py-3 px-4">Session ID / Device</th>
-                                        <th className="py-3 px-4">Login Time (IST)</th>
+                                        <th className="py-3 px-4">Punch In Time (IST)</th>
                                         <th className="py-3 px-4">Last Confirmed Heartbeat</th>
-                                        <th className="py-3 px-4">Duration</th>
+                                        <th className="py-3 px-4">Work Duration</th>
                                         <th className="py-3 px-4 text-right">Status</th>
                                     </tr>
                                 </thead>
@@ -453,13 +453,13 @@ const Dashboard = () => {
                                                     <span className="text-[10px] text-slate-400">{sess.deviceInfo?.browser} ({sess.deviceInfo?.os})</span>
                                                 </td>
                                                 <td className="py-3 px-4 font-semibold text-slate-800">
-                                                    {formatIST(sess.loginTime)}
+                                                    {formatIST(sess.punchInTime || sess.loginTime)}
                                                 </td>
                                                 <td className="py-3 px-4 font-semibold text-slate-800">
                                                     {formatIST(sess.lastHeartbeat)}
                                                 </td>
                                                 <td className="py-3 px-4">
-                                                    <div>{sess.durationMinutes || 0} mins</div>
+                                                    <div className="font-bold text-slate-900">{sess.totalWorkingMins || sess.durationMinutes || 0} mins</div>
                                                     {sess.totalBreakMinutes > 0 && (
                                                         <span className="text-[10px] text-purple-600 font-bold block">
                                                             Break: {sess.totalBreakMinutes}m

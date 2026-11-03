@@ -29,12 +29,17 @@ const getEmployees = async (req, res) => {
                     let liveStatus = latestSession.sessionStatus;
                     let isTrulyActive = Boolean(latestSession.isActive && !latestSession.logoutTime);
 
-                    if (!isTrulyActive) {
+                    // Real-time synchronization with session monitor:
+                    // If session status is marked inactive or logged_out, reflect it directly!
+                    if (!isTrulyActive || liveStatus === "logged_out") {
                         liveStatus = "logged_out";
-                    } else if (latestSession.sessionStatus === "on_break") {
+                    } else if (liveStatus === "on_break") {
                         liveStatus = "on_break";
+                    } else if (liveStatus === "inactive") {
+                        liveStatus = "inactive";
+                    } else if (liveStatus === "heartbeat_missing") {
+                        liveStatus = "heartbeat_missing";
                     } else {
-                        // Any active session without logout is considered Online
                         liveStatus = "active";
                     }
 
@@ -43,7 +48,7 @@ const getEmployees = async (req, res) => {
                         loginTime: latestSession.loginTime,
                         lastHeartbeat: latestSession.lastHeartbeat,
                         sessionStatus: liveStatus,
-                        isActive: isTrulyActive && liveStatus !== "logged_out",
+                        isActive: isTrulyActive && liveStatus === "active",
                     };
                 }
 

@@ -97,6 +97,33 @@ const getStats = async (req, res) => {
                 FieldMeeting.countDocuments(),
             ]);
 
+            // Fetch today's attendance records to attach first punchIn time to recentSessions
+            const todayAttendances = await Attendance.find({ date: today }).lean();
+            const attendanceMap = {};
+            todayAttendances.forEach((att) => {
+                if (att.user) {
+                    attendanceMap[att.user.toString()] = att;
+                }
+            });
+
+            // Attach punchInTime & calculate total work duration from Punch-In
+            const recentSessionsWithPunchIn = recentSessions.map((sess) => {
+                const userId = sess.user?._id?.toString();
+                const att = userId ? attendanceMap[userId] : null;
+                const punchInTime = att?.checkIn || sess.loginTime;
+                
+                // Calculate elapsed duration from Punch In
+                const start = new Date(punchInTime).getTime();
+                const end = sess.logoutTime ? new Date(sess.logoutTime).getTime() : (sess.lastHeartbeat ? new Date(sess.lastHeartbeat).getTime() : Date.now());
+                const totalWorkingMins = Math.max(0, Math.round((end - start) / 60000));
+
+                return {
+                    ...sess,
+                    punchInTime,
+                    totalWorkingMins,
+                };
+            });
+
             // Filter unique active user IDs
             const loggedInUserIds = new Set(activeSessions.map((s) => s.user?._id?.toString()).filter(Boolean));
             const loggedInEmployees = loggedInUserIds.size;
@@ -172,7 +199,7 @@ const getStats = async (req, res) => {
                 pendingCorrections,
                 activeAlertsCount: activeAlerts.length,
                 activeAlerts,
-                recentSessions,
+                recentSessions: recentSessionsWithPunchIn,
                 last7Days,
                 sessionDistribution,
                 meetingStats,
