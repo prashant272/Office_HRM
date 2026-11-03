@@ -42,7 +42,7 @@ import { toast } from "react-hot-toast";
 // Helper for IST formatting
 const formatIST = (dateStr) => {
     if (!dateStr) return "—";
-    return moment(dateStr).utcOffset("+05:30").format("DD MMM, hh:mm A");
+    return moment(dateStr).utcOffset("+05:30").format("DD MMM, hh:mm:ss A");
 };
 
 const StatCard = ({ title, value, subtitle, icon, color, alert, badge }) => (
@@ -675,7 +675,7 @@ const Dashboard = () => {
                                 </div>
                                 <div className="flex items-center justify-between text-xs">
                                     <span className="text-slate-400">Last Server Heartbeat:</span>
-                                    <span className="text-slate-200 font-semibold">{formatIST(lastHeartbeat)}</span>
+                                    <span className="text-slate-200 font-semibold">{formatIST(lastHeartbeat || stats.currentSession?.lastHeartbeat)}</span>
                                 </div>
                             </div>
 

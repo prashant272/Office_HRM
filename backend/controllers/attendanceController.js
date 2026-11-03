@@ -619,6 +619,73 @@ const forceSignoutAll = async (req, res) => {
     }
 };
 
+// @desc    Reset/Clear Today's Attendance & Clock-In for an Employee (Admin only)
+// @route   DELETE /api/attendance/reset-today/:employeeIdOrCode
+// @access  Private/Admin
+const resetEmployeeTodayAttendance = async (req, res) => {
+    try {
+        const { identifier } = req.params;
+        const today = moment().format("YYYY-MM-DD");
+
+        // Find user by employeeId or name or ObjectId
+        let user = null;
+        if (identifier.match(/^[0-9a-fA-F]{24}$/)) {
+            user = await User.findById(identifier);
+        }
+        if (!user) {
+            user = await User.findOne({
+                $or: [
+                    { employeeId: identifier },
+                    { name: new RegExp(`^${identifier}`, "i") }
+                ]
+            });
+        }
+
+        if (!user) {
+            return res.status(404).json({ message: `Employee '${identifier}' not found` });
+        }
+
+        // 1. Delete today's attendance record so they can punch in fresh
+        const deletedAtt = await Attendance.deleteMany({
+            user: user._id,
+            date: today,
+        });
+
+        // 2. Clear any lingering sessions for today
+        const clearedSessions = await LoginSession.deleteMany({
+            user: user._id,
+            $or: [
+                { attendanceDate: today },
+                { loginTime: { $gte: moment().startOf("day").toDate() } }
+            ]
+        });
+
+        // 3. Clear any active alerts for today
+        const ActivityAlert = require("../models/ActivityAlert");
+        await ActivityAlert.deleteMany({
+            user: user._id,
+            alertTime: { $gte: moment().startOf("day").toDate() }
+        });
+
+        // Broadcast socket update
+        try {
+            const socket = require("../socket");
+            const io = socket.getIO();
+            io.emit("attendance-reset", { userId: user._id, employeeId: user.employeeId, date: today });
+            io.emit("session-status-update", { userId: user._id, sessionStatus: "logged_out" });
+        } catch (e) {}
+
+        res.json({
+            success: true,
+            message: `Today's attendance & session for ${user.name} (${user.employeeId}) has been cleared. Employee can now Clock In fresh!`,
+            deletedRecords: deletedAtt.deletedCount,
+            clearedSessions: clearedSessions.deletedCount,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     postHeartbeat,
     checkIn,
@@ -633,4 +700,5 @@ module.exports = {
     reviewCorrection,
     exportAttendanceCSV,
     forceSignoutAll,
+    resetEmployeeTodayAttendance,
 };

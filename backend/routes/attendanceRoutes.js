@@ -14,6 +14,7 @@ const {
     reviewCorrection,
     exportAttendanceCSV,
     forceSignoutAll,
+    resetEmployeeTodayAttendance,
 } = require("../controllers/attendanceController");
 const { protect, admin } = require("../middleware/authMiddleware");
 
@@ -27,6 +28,7 @@ router.get("/my", protect, getMyAttendance);
 router.post("/correction", protect, requestCorrection);
 
 // Admin-only Routes
+router.delete("/reset-today/:identifier", protect, admin, resetEmployeeTodayAttendance);
 router.post("/signout-all", protect, admin, forceSignoutAll);
 router.get("/", protect, admin, getAllAttendance);
 router.get("/sessions", protect, admin, getAllSessions);

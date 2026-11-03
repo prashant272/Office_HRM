@@ -33,9 +33,18 @@ mongoose
         startSessionMonitoring();
     })
     .catch((err) => {
-        console.error("❌ MongoDB Connection Error:", err);
-        process.exit(1);
+        console.error("❌ MongoDB Connection Error:", err.message);
+        // Do not crash server process on transient DB connection error
     });
+
+// Process-level safety guards to prevent unhandled crashes
+process.on("uncaughtException", (err) => {
+    console.error("🚨 Uncaught Exception trapped:", err.message);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("🚨 Unhandled Rejection trapped:", reason?.message || reason);
+});
 
 // Routes
 const authRoutes = require("./routes/authRoutes");
@@ -84,6 +93,13 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
+server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+        console.error(`⚠️ Port ${PORT} is already in use by another instance or process. Please stop existing node process or change PORT.`);
+    } else {
+        console.error("Server error:", err.message);
+    }
+});
 server.listen(PORT, () => {
     console.log(`📡 Server running on port ${PORT}`);
 });

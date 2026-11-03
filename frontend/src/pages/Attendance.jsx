@@ -356,7 +356,8 @@ const Attendance = () => {
                                         <th className="py-4 px-6">Check-Out (IST)</th>
                                         <th className="py-4 px-6">Duration</th>
                                         <th className="py-4 px-6">Shift</th>
-                                        <th className="py-4 px-6 text-right">Status</th>
+                                        <th className="py-4 px-6 text-center">Status</th>
+                                        <th className="py-4 px-6 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -383,7 +384,7 @@ const Attendance = () => {
                                                 <td className="py-4 px-6 text-slate-500 text-[11px] truncate max-w-xs">
                                                     {r.shift || "General Shift"}
                                                 </td>
-                                                <td className="py-4 px-6 text-right">
+                                                <td className="py-4 px-6 text-center">
                                                     <span
                                                         className={`px-3 py-1 rounded-full text-[11px] font-black ${
                                                             r.status === "Present"
@@ -398,11 +399,31 @@ const Attendance = () => {
                                                         {r.status}
                                                     </span>
                                                 </td>
+                                                <td className="py-4 px-6 text-right">
+                                                    <button
+                                                        onClick={async () => {
+                                                            const empIdent = r.user?.employeeId || r.user?._id;
+                                                            if (window.confirm(`Clear today's Clock In/Out for ${r.user?.name}? Employee will be able to punch in again.`)) {
+                                                                try {
+                                                                    const res = await API.delete(`/attendance/reset-today/${empIdent}`);
+                                                                    toast.success(res.data.message || "Attendance reset successfully!");
+                                                                    fetchData();
+                                                                } catch (err) {
+                                                                    toast.error(err.response?.data?.message || "Failed to reset attendance");
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-[11px] font-bold transition-all"
+                                                        title="Reset & Allow Punch In Again"
+                                                    >
+                                                        Clear & Punch In
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan="8" className="py-12 text-center text-slate-400 font-semibold">
+                                            <td colSpan="9" className="py-12 text-center text-slate-400 font-semibold">
                                                 No attendance records match your filters.
                                             </td>
                                         </tr>

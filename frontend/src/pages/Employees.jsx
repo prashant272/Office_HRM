@@ -337,9 +337,9 @@ const Employees = () => {
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                             {filteredEmployees.length > 0 ? (
                                 filteredEmployees.map((emp) => {
-                                    const isOnline = emp.latestSession?.isActive && emp.latestSession?.sessionStatus === "active";
+                                    const isOnline = emp.latestSession?.isActive && (emp.latestSession?.sessionStatus === "active" || emp.latestSession?.sessionStatus === "heartbeat_missing");
                                     const isOnBreak = emp.latestSession?.sessionStatus === "on_break";
-                                    const isMissing = emp.latestSession?.sessionStatus === "heartbeat_missing";
+                                    const isMissing = emp.latestSession?.isActive && emp.latestSession?.sessionStatus === "heartbeat_missing";
 
                                     return (
                                         <tr key={emp._id} className="hover:bg-slate-50/70 transition-colors">
@@ -375,10 +375,6 @@ const Employees = () => {
                                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800">
                                                         <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"></span>
                                                         On Break
-                                                    </span>
-                                                ) : isMissing ? (
-                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800">
-                                                        Tab Closed
                                                     </span>
                                                 ) : (
                                                     <span className="text-slate-400 text-[10px] font-semibold">Offline</span>

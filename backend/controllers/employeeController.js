@@ -26,19 +26,16 @@ const getEmployees = async (req, res) => {
 
                 let sessionPayload = null;
                 if (latestSession) {
-                    // Check if heartbeat is truly fresh (< 2 mins)
-                    const lastHbTime = latestSession.lastHeartbeat ? new Date(latestSession.lastHeartbeat).getTime() : new Date(latestSession.loginTime).getTime();
-                    const diffMinutes = (now - lastHbTime) / 60000;
-
                     let liveStatus = latestSession.sessionStatus;
-                    let isTrulyActive = latestSession.isActive && !latestSession.logoutTime;
+                    let isTrulyActive = Boolean(latestSession.isActive && !latestSession.logoutTime);
 
                     if (!isTrulyActive) {
                         liveStatus = "logged_out";
-                    } else if (diffMinutes >= 10) {
-                        liveStatus = "inactive";
-                    } else if (diffMinutes >= 2) {
-                        liveStatus = "heartbeat_missing";
+                    } else if (latestSession.sessionStatus === "on_break") {
+                        liveStatus = "on_break";
+                    } else {
+                        // Any active session without logout is considered Online
+                        liveStatus = "active";
                     }
 
                     sessionPayload = {
@@ -46,8 +43,7 @@ const getEmployees = async (req, res) => {
                         loginTime: latestSession.loginTime,
                         lastHeartbeat: latestSession.lastHeartbeat,
                         sessionStatus: liveStatus,
-                        isActive: isTrulyActive && diffMinutes < 10,
-                        diffMinutes: Math.round(diffMinutes),
+                        isActive: isTrulyActive && liveStatus !== "logged_out",
                     };
                 }
 
