@@ -38,10 +38,42 @@ const runInactivityCheck = async () => {
             logoutTime: null,
         }).populate("user", "name email role department designation");
 
+        const Attendance = require("../models/Attendance");
+
         for (const session of activeSessions) {
             const sessionDate = session.attendanceDate || (session.loginTime ? moment(session.loginTime).format("YYYY-MM-DD") : null);
             const lastHbTime = session.lastHeartbeat ? session.lastHeartbeat.getTime() : session.loginTime.getTime();
             const diffMinutes = (now - lastHbTime) / 60000;
+
+            // 0. IF EMPLOYEE HAS ALREADY PUNCHED OUT TODAY (checkOut exists), terminate session & resolve any active alert immediately!
+            if (session.user?._id) {
+                const checkedOutAtt = await Attendance.findOne({
+                    user: session.user._id,
+                    date: sessionDate || todayStr,
+                    checkOut: { $ne: null }
+                });
+
+                if (checkedOutAtt) {
+                    session.isActive = false;
+                    session.logoutTime = checkedOutAtt.checkOut || new Date();
+                    session.sessionStatus = "logged_out";
+                    session.logoutReason = "explicit_logout";
+                    await session.save();
+
+                    // Resolve any alert
+                    const staleAlerts = await ActivityAlert.find({ session: session._id, status: "active" });
+                    for (const alert of staleAlerts) {
+                        alert.status = "resolved";
+                        alert.resolvedAt = session.logoutTime;
+                        if (!alert.inactiveTo) {
+                            alert.inactiveTo = session.logoutTime;
+                        }
+                        alert.resolutionReason = "Employee punched out. Shift completed.";
+                        await alert.save();
+                    }
+                    continue;
+                }
+            }
 
             // 1. AUTO-EXPIRE STALE PAST-DATE SESSIONS (e.g., from yesterday or abandoned sessions)
             if (sessionDate && sessionDate !== todayStr) {

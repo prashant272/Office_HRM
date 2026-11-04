@@ -130,6 +130,54 @@ const checkOut = async (req, res) => {
         attendance.workDuration = Math.max(0, Math.floor(diff / 1000 / 60));
 
         const updatedAttendance = await attendance.save();
+
+        // WHEN EMPLOYEE PUNCHES OUT: Cleanly close login session & resolve all inactivity alerts!
+        // No inactivity should ever be counted after employee has clocked out for the day!
+        const now = attendance.checkOut;
+        const ActivityAlert = require("../models/ActivityAlert");
+
+        // 1. Mark employee's active sessions as logged_out
+        const activeSessions = await LoginSession.find({
+            user: req.user._id,
+            isActive: true,
+        });
+
+        for (const sess of activeSessions) {
+            sess.isActive = false;
+            sess.logoutTime = now;
+            sess.sessionStatus = "logged_out";
+            sess.logoutReason = "explicit_logout";
+            await sess.save();
+
+            // 2. Auto-resolve any active inactivity alerts
+            const alerts = await ActivityAlert.find({ session: sess._id, status: "active" });
+            for (const al of alerts) {
+                al.status = "resolved";
+                al.resolvedAt = now;
+                if (!al.inactiveTo) {
+                    al.inactiveTo = now;
+                }
+                al.resolutionReason = "Employee punched out. Shift completed.";
+                await al.save();
+            }
+        }
+
+        // Broadcast to Admins that user has clocked out and session is closed
+        try {
+            const socket = require("../socket");
+            const io = socket.getIO();
+            io.emit("session-status-update", {
+                userId: req.user._id,
+                sessionStatus: "logged_out",
+                logoutTime: now,
+            });
+            io.emit("attendance-update", {
+                userId: req.user._id,
+                checkOut: now,
+                workDuration: attendance.workDuration,
+            });
+        } catch (e) {}
+
         res.json(updatedAttendance);
     } catch (error) {
         res.status(500).json({ message: error.message });
