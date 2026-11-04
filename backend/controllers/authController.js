@@ -271,16 +271,6 @@ const logoutUser = async (req, res) => {
                 await alert.save();
             }
 
-                // Update Attendance checkOut time if not yet checked out
-                const today = moment().format("YYYY-MM-DD");
-                const attendance = await Attendance.findOne({ user: req.user._id, date: today });
-                if (attendance && !attendance.checkOut) {
-                    attendance.checkOut = now;
-                    const diffMs = attendance.checkOut.getTime() - attendance.checkIn.getTime();
-                    attendance.workDuration = Math.round(diffMs / 60000);
-                    await attendance.save();
-                }
-
                 // Record Audit Log
                 await AuditLog.create({
                     user: req.user._id,

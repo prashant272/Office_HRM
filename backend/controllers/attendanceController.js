@@ -588,18 +588,7 @@ const forceSignoutAll = async (req, res) => {
             }
         );
 
-        // 3. Close open attendances
-        const openAtt = await Attendance.find({ checkOut: null });
-        for (const a of openAtt) {
-            a.checkOut = now;
-            if (a.checkIn) {
-                const diffMs = Math.max(0, now.getTime() - new Date(a.checkIn).getTime());
-                a.workDuration = Math.round(diffMs / 60000);
-            }
-            await a.save();
-        }
-
-        // 4. Broadcast via Socket
+        // 3. Broadcast via Socket (Sessions logged out, attendance punch-out remains employee-controlled)
         try {
             const socket = require("../socket");
             const io = socket.getIO();
@@ -609,10 +598,9 @@ const forceSignoutAll = async (req, res) => {
 
         res.json({
             success: true,
-            message: "All employees have been signed out successfully. Ready for fresh attendance tomorrow!",
+            message: "All employee login sessions have been signed out. Attendance punch out remains independent.",
             sessionsClosed: sessionRes.modifiedCount,
             alertsResolved: alertRes.modifiedCount,
-            attendancesClosed: openAtt.length,
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
