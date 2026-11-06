@@ -647,6 +647,36 @@ const Dashboard = () => {
                                     "Attendance Completed for Today"
                                 )}
                             </button>
+
+                            {/* Accidental Punch Out Recovery Button for Employee */}
+                            {stats.todayAttendance?.checkOut && (
+                                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs animate-in fade-in">
+                                    <div className="flex items-center space-x-2 text-amber-900">
+                                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                                        <span className="font-semibold text-[11px]">Accidental Punch Out?</span>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (window.confirm("Do you want to resume your shift? Your punch-out record will be cleared.")) {
+                                                setClockLoading(true);
+                                                try {
+                                                    const res = await API.post("/attendance/resume-shift");
+                                                    toast.success(res.data.message || "Shift resumed successfully!");
+                                                    fetchStats();
+                                                } catch (err) {
+                                                    toast.error(err.response?.data?.message || "Failed to resume shift");
+                                                } finally {
+                                                    setClockLoading(false);
+                                                }
+                                            }
+                                        }}
+                                        disabled={clockLoading}
+                                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] transition-all shadow-xs shrink-0"
+                                    >
+                                        Resume Shift
+                                    </button>
+                                </div>
+                            )}
                         </div>
 
                         {/* Live Session Status Widget */}

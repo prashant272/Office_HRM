@@ -656,11 +656,12 @@ const forceSignoutAll = async (req, res) => {
 };
 
 // @desc    Reset/Clear Today's Attendance & Clock-In for an Employee (Admin only)
-// @route   DELETE /api/attendance/reset-today/:employeeIdOrCode
+// @route   POST or DELETE /api/attendance/reset-today/:identifier
 // @access  Private/Admin
 const resetEmployeeTodayAttendance = async (req, res) => {
     try {
         const { identifier } = req.params;
+        const { clearType = "all" } = req.body || {}; // "all" | "punch_out_only"
         const today = moment().format("YYYY-MM-DD");
 
         // Find user by employeeId or name or ObjectId
@@ -679,6 +680,41 @@ const resetEmployeeTodayAttendance = async (req, res) => {
 
         if (!user) {
             return res.status(404).json({ message: `Employee '${identifier}' not found` });
+        }
+
+        const socket = require("../socket");
+
+        // If clearType is "punch_out_only", only clear the checkout so employee shift resumes
+        if (clearType === "punch_out_only") {
+            const attendance = await Attendance.findOne({ user: user._id, date: today });
+            if (!attendance) {
+                return res.status(400).json({ message: "No attendance record found for today to clear punch-out" });
+            }
+
+            attendance.checkOut = null;
+            attendance.checkOutLocation = null;
+            attendance.workDuration = 0;
+            await attendance.save();
+
+            // Re-activate login session
+            const lastSession = await LoginSession.findOne({ user: user._id }).sort({ createdAt: -1 });
+            if (lastSession) {
+                lastSession.sessionStatus = "active";
+                lastSession.logoutTime = null;
+                lastSession.lastHeartbeat = new Date();
+                await lastSession.save();
+            }
+
+            try {
+                const io = socket.getIO();
+                io.emit("attendance-reset", { userId: user._id, employeeId: user.employeeId, date: today, clearType: "punch_out_only" });
+                io.emit("session-status-update", { userId: user._id, sessionStatus: "active" });
+            } catch (e) {}
+
+            return res.json({
+                success: true,
+                message: `Punch Out cleared for ${user.name}. Shift is now in progress again!`,
+            });
         }
 
         // 1. Delete today's attendance record so they can punch in fresh
@@ -705,17 +741,117 @@ const resetEmployeeTodayAttendance = async (req, res) => {
 
         // Broadcast socket update
         try {
-            const socket = require("../socket");
             const io = socket.getIO();
-            io.emit("attendance-reset", { userId: user._id, employeeId: user.employeeId, date: today });
+            io.emit("attendance-reset", { userId: user._id, employeeId: user.employeeId, date: today, clearType: "all" });
             io.emit("session-status-update", { userId: user._id, sessionStatus: "logged_out" });
         } catch (e) {}
 
         res.json({
             success: true,
-            message: `Today's attendance & session for ${user.name} (${user.employeeId}) has been cleared. Employee can now Clock In fresh!`,
+            message: `Entire today's attendance record for ${user.name} (${user.employeeId}) has been cleared. Employee can now Clock In fresh!`,
             deletedRecords: deletedAtt.deletedCount,
             clearedSessions: clearedSessions.deletedCount,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Admin Edit Attendance (checkIn, checkOut, status, shift)
+// @route   PUT /api/attendance/:id
+// @access  Private/Admin
+const adminUpdateAttendance = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { checkIn, checkOut, status, shift } = req.body;
+
+        const attendance = await Attendance.findById(id).populate("user", "name employeeId");
+        if (!attendance) {
+            return res.status(404).json({ message: "Attendance record not found" });
+        }
+
+        if (status) attendance.status = status;
+        if (shift) attendance.shift = shift;
+
+        if (checkIn !== undefined) {
+            attendance.checkIn = checkIn ? new Date(checkIn) : null;
+        }
+
+        if (checkOut !== undefined) {
+            attendance.checkOut = checkOut ? new Date(checkOut) : null;
+        }
+
+        // Recalculate duration if both present
+        if (attendance.checkIn && attendance.checkOut) {
+            const diff = new Date(attendance.checkOut) - new Date(attendance.checkIn);
+            attendance.workDuration = Math.max(0, Math.floor(diff / 1000 / 60));
+        } else {
+            attendance.workDuration = 0;
+        }
+
+        await attendance.save();
+
+        try {
+            const socket = require("../socket");
+            const io = socket.getIO();
+            io.emit("attendance-updated", { attendanceId: attendance._id, userId: attendance.user?._id });
+        } catch (e) {}
+
+        res.json({
+            success: true,
+            message: "Attendance updated successfully",
+            attendance,
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Resume accidental punch out by employee themselves
+// @route   POST /api/attendance/resume-shift
+// @access  Private
+const resumeShift = async (req, res) => {
+    const today = moment().format("YYYY-MM-DD");
+    try {
+        const attendance = await Attendance.findOne({
+            user: req.user._id,
+            date: today,
+        });
+
+        if (!attendance) {
+            return res.status(400).json({ message: "No attendance found for today" });
+        }
+
+        if (!attendance.checkOut) {
+            return res.status(400).json({ message: "You have not punched out yet" });
+        }
+
+        // Clear checkOut to resume shift
+        attendance.checkOut = null;
+        attendance.checkOutLocation = null;
+        attendance.workDuration = 0;
+        await attendance.save();
+
+        // Reactivate login session
+        const lastSession = await LoginSession.findOne({ user: req.user._id }).sort({ createdAt: -1 });
+        if (lastSession) {
+            lastSession.sessionStatus = "active";
+            lastSession.logoutTime = null;
+            lastSession.lastHeartbeat = new Date();
+            await lastSession.save();
+        }
+
+        try {
+            const socket = require("../socket");
+            const io = socket.getIO();
+            io.emit("session-status-update", { userId: req.user._id, sessionStatus: "active" });
+            io.emit("attendance-updated", { attendanceId: attendance._id, userId: req.user._id });
+        } catch (e) {}
+
+        res.json({
+            success: true,
+            message: "Accidental punch-out reversed! Your shift is back in progress.",
+            attendance,
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -726,6 +862,7 @@ module.exports = {
     postHeartbeat,
     checkIn,
     checkOut,
+    resumeShift,
     toggleBreak,
     getBreakStatus,
     getMyAttendance,
@@ -737,4 +874,5 @@ module.exports = {
     exportAttendanceCSV,
     forceSignoutAll,
     resetEmployeeTodayAttendance,
+    adminUpdateAttendance,
 };

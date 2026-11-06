@@ -61,6 +61,20 @@ const Attendance = () => {
     const [adminComment, setAdminComment] = useState("");
     const [reviewLoading, setReviewLoading] = useState(false);
 
+    // Clear Options Modal for Admin
+    const [clearModalRecord, setClearModalRecord] = useState(null);
+    const [clearActionLoading, setClearActionLoading] = useState(false);
+
+    // Edit Attendance Modal for Admin
+    const [editModalRecord, setEditModalRecord] = useState(null);
+    const [editForm, setEditForm] = useState({
+        checkIn: "",
+        checkOut: "",
+        status: "Present",
+        shift: "General Shift (09:30 - 18:30)",
+    });
+    const [editLoading, setEditLoading] = useState(false);
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
@@ -400,24 +414,30 @@ const Attendance = () => {
                                                     </span>
                                                 </td>
                                                 <td className="py-4 px-6 text-right">
-                                                    <button
-                                                        onClick={async () => {
-                                                            const empIdent = r.user?.employeeId || r.user?._id;
-                                                            if (window.confirm(`Clear today's Clock In/Out for ${r.user?.name}? Employee will be able to punch in again.`)) {
-                                                                try {
-                                                                    const res = await API.delete(`/attendance/reset-today/${empIdent}`);
-                                                                    toast.success(res.data.message || "Attendance reset successfully!");
-                                                                    fetchData();
-                                                                } catch (err) {
-                                                                    toast.error(err.response?.data?.message || "Failed to reset attendance");
-                                                                }
-                                                            }
-                                                        }}
-                                                        className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-[11px] font-bold transition-all"
-                                                        title="Reset & Allow Punch In Again"
-                                                    >
-                                                        Clear & Punch In
-                                                    </button>
+                                                    <div className="flex items-center justify-end space-x-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                setEditModalRecord(r);
+                                                                setEditForm({
+                                                                    checkIn: r.checkIn ? moment(r.checkIn).format("YYYY-MM-DDTHH:mm") : "",
+                                                                    checkOut: r.checkOut ? moment(r.checkOut).format("YYYY-MM-DDTHH:mm") : "",
+                                                                    status: r.status || "Present",
+                                                                    shift: r.shift || "General Shift (09:30 - 18:30)",
+                                                                });
+                                                            }}
+                                                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-[11px] font-bold transition-all shadow-xs"
+                                                            title="Edit Punch In, Punch Out & Status"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setClearModalRecord(r)}
+                                                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-[11px] font-bold transition-all shadow-xs"
+                                                            title="Choose What to Clear"
+                                                        >
+                                                            Clear...
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))
@@ -844,6 +864,251 @@ const Attendance = () => {
                                     className="px-5 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider"
                                 >
                                     {reviewLoading ? "Saving..." : `Confirm ${reviewStatus}`}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Clear Attendance Options Modal */}
+            {clearModalRecord && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 animate-in zoom-in-95">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <span className="text-[10px] uppercase font-black tracking-widest text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+                                    Attendance Clear Action
+                                </span>
+                                <h3 className="text-lg font-black text-slate-900 mt-2">
+                                    {clearModalRecord.user?.name || "Employee"}
+                                </h3>
+                                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                                    Date: {clearModalRecord.date} | Emp ID: {clearModalRecord.user?.employeeId || "—"}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setClearModalRecord(null)}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="my-5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs space-y-1.5">
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 font-medium">Clock In:</span>
+                                <span className="font-bold text-slate-800">{formatIST(clearModalRecord.checkIn)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 font-medium">Clock Out:</span>
+                                <span className="font-bold text-slate-800">{formatIST(clearModalRecord.checkOut)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-500 font-medium">Current Status:</span>
+                                <span className="font-bold text-emerald-600">{clearModalRecord.status}</span>
+                            </div>
+                        </div>
+
+                        <p className="text-xs font-bold text-slate-700 mb-3">
+                            Select what you would like to clear:
+                        </p>
+
+                        <div className="space-y-3">
+                            {/* Option 1: Clear Punch Out Only */}
+                            <button
+                                type="button"
+                                disabled={clearActionLoading || !clearModalRecord.checkOut}
+                                onClick={async () => {
+                                    setClearActionLoading(true);
+                                    const empIdent = clearModalRecord.user?.employeeId || clearModalRecord.user?._id;
+                                    try {
+                                        const res = await API.post(`/attendance/reset-today/${empIdent}`, { clearType: "punch_out_only" });
+                                        toast.success(res.data.message || "Punch Out cleared! Employee shift is active again.");
+                                        setClearModalRecord(null);
+                                        fetchData();
+                                    } catch (err) {
+                                        toast.error(err.response?.data?.message || "Failed to clear punch out");
+                                    } finally {
+                                        setClearActionLoading(false);
+                                    }
+                                }}
+                                className={`w-full p-3.5 rounded-2xl border text-left flex items-start space-x-3 transition-all ${
+                                    !clearModalRecord.checkOut
+                                        ? "opacity-50 cursor-not-allowed bg-slate-50 border-slate-200"
+                                        : "bg-blue-50/50 hover:bg-blue-50 border-blue-200 hover:border-blue-400 group"
+                                }`}
+                            >
+                                <div className="p-2 rounded-xl bg-blue-100 text-blue-700 mt-0.5">
+                                    <Clock className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="text-xs font-black text-slate-900 group-hover:text-blue-700">
+                                        Clear Punch Out Only (Resume Shift)
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
+                                        Preserves the punch-in time. Only removes punch-out so the employee can resume their shift and clock out later.
+                                    </p>
+                                </div>
+                            </button>
+
+                            {/* Option 2: Clear Entire Day Record */}
+                            <button
+                                type="button"
+                                disabled={clearActionLoading}
+                                onClick={async () => {
+                                    if (window.confirm(`Are you sure you want to completely clear today's attendance for ${clearModalRecord.user?.name}? Both Punch In & Punch Out will be deleted.`)) {
+                                        setClearActionLoading(true);
+                                        const empIdent = clearModalRecord.user?.employeeId || clearModalRecord.user?._id;
+                                        try {
+                                            const res = await API.post(`/attendance/reset-today/${empIdent}`, { clearType: "all" });
+                                            toast.success(res.data.message || "Entire record cleared successfully!");
+                                            setClearModalRecord(null);
+                                            fetchData();
+                                        } catch (err) {
+                                            toast.error(err.response?.data?.message || "Failed to clear attendance");
+                                        } finally {
+                                            setClearActionLoading(false);
+                                        }
+                                    }
+                                }}
+                                className="w-full p-3.5 rounded-2xl border bg-rose-50/50 hover:bg-rose-50 border-rose-200 hover:border-rose-400 text-left flex items-start space-x-3 transition-all group"
+                            >
+                                <div className="p-2 rounded-xl bg-rose-100 text-rose-700 mt-0.5">
+                                    <LogOut className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1">
+                                    <div className="text-xs font-black text-rose-900 group-hover:text-rose-700">
+                                        Clear Entire Day Record (Punch In + Out)
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
+                                        Permanently clears all today's records for this employee. The employee will be able to Clock In completely fresh.
+                                    </p>
+                                </div>
+                            </button>
+                        </div>
+
+                        <div className="mt-5 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => setClearModalRecord(null)}
+                                className="px-5 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Attendance Record Modal */}
+            {editModalRecord && (
+                <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 animate-in zoom-in-95">
+                        <div className="flex items-start justify-between mb-4">
+                            <div>
+                                <span className="text-[10px] uppercase font-black tracking-widest text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+                                    Admin Edit
+                                </span>
+                                <h3 className="text-lg font-black text-slate-900 mt-2">
+                                    Edit Attendance: {editModalRecord.user?.name}
+                                </h3>
+                                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                                    Date: {editModalRecord.date}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setEditModalRecord(null)}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                setEditLoading(true);
+                                try {
+                                    const res = await API.put(`/attendance/${editModalRecord._id}`, editForm);
+                                    toast.success(res.data.message || "Attendance updated successfully!");
+                                    setEditModalRecord(null);
+                                    fetchData();
+                                } catch (err) {
+                                    toast.error(err.response?.data?.message || "Failed to update attendance");
+                                } finally {
+                                    setEditLoading(false);
+                                }
+                            }}
+                            className="space-y-4 text-xs"
+                        >
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    Clock In Time
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={editForm.checkIn}
+                                    onChange={(e) => setEditForm({ ...editForm, checkIn: e.target.value })}
+                                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    Clock Out Time (Blank = In Progress)
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={editForm.checkOut}
+                                    onChange={(e) => setEditForm({ ...editForm, checkOut: e.target.value })}
+                                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary/20"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    Status
+                                </label>
+                                <select
+                                    value={editForm.status}
+                                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary/20"
+                                >
+                                    <option value="Present">Present</option>
+                                    <option value="Late">Late</option>
+                                    <option value="Half-Day">Half-Day</option>
+                                    <option value="Absent">Absent</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 mb-1">
+                                    Shift
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editForm.shift}
+                                    onChange={(e) => setEditForm({ ...editForm, shift: e.target.value })}
+                                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-primary/20"
+                                    placeholder="e.g. General Shift (09:30 - 18:30)"
+                                />
+                            </div>
+
+                            <div className="flex justify-end space-x-3 pt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditModalRecord(null)}
+                                    className="px-4 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-xl"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={editLoading}
+                                    className="px-5 py-2.5 bg-primary hover:bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-primary/25 disabled:opacity-50"
+                                >
+                                    {editLoading ? "Saving..." : "Save Changes"}
                                 </button>
                             </div>
                         </form>
